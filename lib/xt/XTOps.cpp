@@ -13,14 +13,18 @@ using namespace mlir::xt;
 
 static LogicalResult verifyTileAttr(Operation *op, DenseI64ArrayAttr tile,
                                     RankedTensorType tensorType) {
-  if (!tile || tile.size() != 2)
-    return op->emitOpError("requires tile attribute with exactly two entries");
-  if (tensorType.getRank() != 2 || !tensorType.hasStaticShape())
-    return op->emitOpError("requires a statically shaped rank-2 tensor");
-  if (tile[0] <= 0 || tile[1] <= 0)
-    return op->emitOpError("requires positive tile dimensions");
-  if (tensorType.getDimSize(0) != tile[0] || tensorType.getDimSize(1) != tile[1])
-    return op->emitOpError("tile attribute must match tensor shape");
+  if (!tile || tile.empty())
+    return op->emitOpError("requires tile attribute with at least one entry");
+  if (!tensorType.hasStaticShape())
+    return op->emitOpError("requires a statically shaped tensor");
+  if (static_cast<int64_t>(tile.size()) != tensorType.getRank())
+    return op->emitOpError("tile rank must match tensor rank");
+  for (int64_t i = 0, e = tensorType.getRank(); i < e; ++i) {
+    if (tile[i] <= 0)
+      return op->emitOpError("requires positive tile dimensions");
+    if (tensorType.getDimSize(i) != tile[i])
+      return op->emitOpError("tile attribute must match tensor shape");
+  }
   return success();
 }
 
@@ -28,8 +32,8 @@ static LogicalResult verifyMemRefAndTensor(Operation *op, MemRefType memRefType,
                                            RankedTensorType tensorType) {
   if (!memRefType)
     return op->emitOpError("requires a ranked memref operand");
-  if (memRefType.getRank() != 2)
-    return op->emitOpError("requires a rank-2 memref");
+  if (memRefType.getRank() != tensorType.getRank())
+    return op->emitOpError("memref rank must match tensor rank");
   if (memRefType.getElementType() != tensorType.getElementType())
     return op->emitOpError("requires matching memref/tensor element types");
   return success();
@@ -53,19 +57,27 @@ static ParseResult parseSingleTypeResultOp(OpAsmParser &parser,
 static ParseResult parseTileAttr(OpAsmParser &parser,
                                  OperationState &result) {
   Builder &builder = parser.getBuilder();
-  int64_t tileM;
-  int64_t tileN;
+  SmallVector<int64_t> tileDims;
   if (parser.parseLBrace() || parser.parseKeyword("tile") || parser.parseEqual() ||
-      parser.parseLSquare() || parser.parseInteger(tileM) ||
-      parser.parseComma() || parser.parseInteger(tileN) ||
-      parser.parseRSquare() || parser.parseRBrace())
+      parser.parseLSquare())
     return failure();
-  result.addAttribute("tile", builder.getDenseI64ArrayAttr({tileM, tileN}));
+  do {
+    int64_t dim;
+    if (parser.parseInteger(dim))
+      return failure();
+    tileDims.push_back(dim);
+  } while (succeeded(parser.parseOptionalComma()));
+  if (parser.parseRSquare() || parser.parseRBrace())
+    return failure();
+  result.addAttribute("tile", builder.getDenseI64ArrayAttr(tileDims));
   return success();
 }
 
 static void printTileAttr(OpAsmPrinter &printer, DenseI64ArrayAttr tile) {
-  printer << " {tile = [" << tile[0] << ", " << tile[1] << "]}";
+  printer << " {tile = [";
+  llvm::interleaveComma(tile.asArrayRef(), printer,
+                        [&](int64_t dim) { printer << dim; });
+  printer << "]}";
 }
 
 static void printSingleTypeResultOp(OpAsmPrinter &printer, Operation *op) {
@@ -93,28 +105,28 @@ void GetTileBlockIdOp::print(OpAsmPrinter &printer) {
 
 ParseResult LoadOp::parse(OpAsmParser &parser, OperationState &result) {
   OpAsmParser::UnresolvedOperand source;
-  OpAsmParser::UnresolvedOperand tileX;
-  OpAsmParser::UnresolvedOperand tileY;
+  SmallVector<OpAsmParser::UnresolvedOperand> coords;
   MemRefType sourceType;
   Type resultType;
   Type coordType = parser.getBuilder().getI32Type();
   if (parser.parseLParen() || parser.parseOperand(source) ||
-      parser.parseComma() || parser.parseOperand(tileX) ||
-      parser.parseComma() || parser.parseOperand(tileY) ||
-      parser.parseRParen() || parseTileAttr(parser, result) ||
+      parser.parseTrailingOperandList(coords) || parser.parseRParen() ||
+      parseTileAttr(parser, result) ||
       parser.parseColonType(sourceType) || parser.parseArrow() ||
       parser.parseType(resultType))
     return failure();
   if (parser.resolveOperand(source, sourceType, result.operands) ||
-      parser.resolveOperand(tileX, coordType, result.operands) ||
-      parser.resolveOperand(tileY, coordType, result.operands))
+      parser.resolveOperands(coords, coordType, result.operands))
     return failure();
   result.addTypes(resultType);
   return success();
 }
 
 void LoadOp::print(OpAsmPrinter &printer) {
-  printer << "(" << getSource() << ", " << getTileX() << ", " << getTileY() << ")";
+  printer << "(" << getSource();
+  for (Value coord : getCoords())
+    printer << ", " << coord;
+  printer << ")";
   printTileAttr(printer, getTileAttr());
   printer << " : " << getSource().getType() << " -> " << getResult().getType();
 }
@@ -122,30 +134,29 @@ void LoadOp::print(OpAsmPrinter &printer) {
 ParseResult StoreOp::parse(OpAsmParser &parser, OperationState &result) {
   OpAsmParser::UnresolvedOperand value;
   OpAsmParser::UnresolvedOperand dest;
-  OpAsmParser::UnresolvedOperand tileX;
-  OpAsmParser::UnresolvedOperand tileY;
+  SmallVector<OpAsmParser::UnresolvedOperand> coords;
   Type valueType;
   MemRefType destType;
   Type coordType = parser.getBuilder().getI32Type();
   if (parser.parseLParen() || parser.parseOperand(value) ||
       parser.parseComma() || parser.parseOperand(dest) ||
-      parser.parseComma() || parser.parseOperand(tileX) ||
-      parser.parseComma() || parser.parseOperand(tileY) ||
-      parser.parseRParen() || parseTileAttr(parser, result) ||
+      parser.parseTrailingOperandList(coords) || parser.parseRParen() ||
+      parseTileAttr(parser, result) ||
       parser.parseColonType(valueType) || parser.parseArrow() ||
       parser.parseType(destType))
     return failure();
   if (parser.resolveOperand(value, valueType, result.operands) ||
       parser.resolveOperand(dest, destType, result.operands) ||
-      parser.resolveOperand(tileX, coordType, result.operands) ||
-      parser.resolveOperand(tileY, coordType, result.operands))
+      parser.resolveOperands(coords, coordType, result.operands))
     return failure();
   return success();
 }
 
 void StoreOp::print(OpAsmPrinter &printer) {
-  printer << "(" << getValue() << ", " << getDest() << ", " << getTileX() << ", "
-          << getTileY() << ")";
+  printer << "(" << getValue() << ", " << getDest();
+  for (Value coord : getCoords())
+    printer << ", " << coord;
+  printer << ")";
   printTileAttr(printer, getTileAttr());
   printer << " : " << getValue().getType() << " -> " << getDest().getType();
 }
@@ -169,8 +180,12 @@ LogicalResult LoadOp::verify() {
   auto memRefType = llvm::dyn_cast<MemRefType>(getSource().getType());
   if (!tensorType)
     return emitOpError("requires a ranked tensor result");
+  if (getCoords().empty())
+    return emitOpError("requires at least one coordinate");
   if (failed(verifyTileAttr(*this, getTileAttr(), tensorType)))
     return failure();
+  if (static_cast<int64_t>(getCoords().size()) != tensorType.getRank())
+    return emitOpError("coordinate count must match tile rank");
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
 }
 
@@ -179,8 +194,12 @@ LogicalResult StoreOp::verify() {
   auto memRefType = llvm::dyn_cast<MemRefType>(getDest().getType());
   if (!tensorType)
     return emitOpError("requires a ranked tensor operand");
+  if (getCoords().empty())
+    return emitOpError("requires at least one coordinate");
   if (failed(verifyTileAttr(*this, getTileAttr(), tensorType)))
     return failure();
+  if (static_cast<int64_t>(getCoords().size()) != tensorType.getRank())
+    return emitOpError("coordinate count must match tile rank");
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
 }
 
@@ -192,8 +211,8 @@ LogicalResult AddOp::verify() {
     return emitOpError("requires ranked tensor operands and result");
   if (lhsType != rhsType || lhsType != resultType)
     return emitOpError("requires operand and result tensor types to match");
-  if (lhsType.getRank() != 2 || !lhsType.hasStaticShape())
-    return emitOpError("requires statically shaped rank-2 tensors");
+  if (!lhsType.hasStaticShape())
+    return emitOpError("requires statically shaped tensors");
   return success();
 }
 
@@ -204,8 +223,8 @@ LogicalResult ExpOp::verify() {
     return emitOpError("requires ranked tensor operand and result");
   if (inputType != resultType)
     return emitOpError("requires operand and result tensor types to match");
-  if (inputType.getRank() != 2 || !inputType.hasStaticShape())
-    return emitOpError("requires statically shaped rank-2 tensors");
+  if (!inputType.hasStaticShape())
+    return emitOpError("requires statically shaped tensors");
   return success();
 }
 

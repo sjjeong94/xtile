@@ -30,15 +30,15 @@ The initial operation set is:
 - `xt.add` performing elementwise tensor addition
 - `xt.exp` performing elementwise tensor exponential
 
-`xt.load` and `xt.store` require a `tile = [m, n]` attribute. The attribute must match the last two dimensions of the tensor type and the element type of the backing memref/tensor pair.
+`xt.load` and `xt.store` require a `tile = [...]` attribute. The attribute length must match the operation rank, and that rank must match the memref rank, tensor rank, and coordinate operand count.
 
 ## Verification Rules
 
 - `xt.get_tile_block_id` always returns exactly three `i32` values.
-- `xt.load` requires a ranked memref source, two index-like tile coordinates, a ranked tensor result, and a valid `tile` attribute.
-- `xt.store` requires a ranked tensor input, ranked memref destination, two index-like tile coordinates, and a `tile` attribute matching the tensor shape.
-- `xt.add` requires both operands and the result to have the same ranked tensor type.
-- `xt.exp` requires the operand and result to have the same ranked tensor type.
+- `xt.load` requires a ranked memref source, `N` index-like tile coordinates, a ranked tensor result of rank `N`, and a valid `tile` attribute of length `N`.
+- `xt.store` requires a ranked tensor input, ranked memref destination, `N` index-like tile coordinates, and a `tile` attribute matching the tensor shape.
+- `xt.add` requires both operands and the result to have the same statically shaped ranked tensor type.
+- `xt.exp` requires the operand and result to have the same statically shaped ranked tensor type.
 
 ## Canonicalization
 
@@ -52,10 +52,10 @@ The first implementation keeps canonicalization intentionally small:
 Lowering converts `xt` ops to standard MLIR dialects:
 
 - `xt.get_tile_block_id` lowers to configurable constant `arith.constant` values via pass options. This keeps the pipeline runnable without introducing a runtime ABI.
-- `xt.load` lowers to nested `scf.for` loops that compute tile offsets and assemble the result with `tensor.insert`.
-- `xt.store` lowers to nested `scf.for` loops that extract tensor elements and write them with `memref.store`.
-- `xt.add` lowers to nested `scf.for` loops building a result tensor with `arith.addf` or `arith.addi`.
-- `xt.exp` lowers to nested `scf.for` loops using `math.exp`.
+- `xt.load` lowers to rank-generic nested `scf.for` loops that compute tile offsets and assemble the result with `tensor.insert`.
+- `xt.store` lowers to rank-generic nested `scf.for` loops that extract tensor elements and write them with `memref.store`.
+- `xt.add` lowers to rank-generic nested `scf.for` loops building a result tensor with `arith.addf` or `arith.addi`.
+- `xt.exp` lowers to rank-generic nested `scf.for` loops using `math.exp`.
 
 The pass pipeline target is: `xt` -> `scf` / `tensor` / `memref` / `arith` / `math`, followed by standard cleanups such as `canonicalize` and `cse`.
 
@@ -67,8 +67,8 @@ The pass pipeline target is: `xt` -> `scf` / `tensor` / `memref` / `arith` / `ma
 
 lit tests will cover:
 
-- Parser/printer round-trip for the sample IR
-- Verifier failures for invalid tile shapes and mismatched types
+- Parser/printer round-trip for 1D, 2D, and 3D sample IR
+- Verifier failures for invalid tile rank, coordinate-count mismatch, tile shapes, and mismatched types
 - Canonicalization of `xt.add` with zero tensors
 - Lowering output that removes all `xt` ops in favor of standard dialects
 

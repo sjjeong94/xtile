@@ -21,8 +21,7 @@ def XT_GetTileBlockIdOp : XT_Op<"get_tile_block_id", [Pure]> {
 def XT_LoadOp : XT_Op<"load"> {
   let summary = "load a tensor tile from a memref";
   let arguments = (ins XT_RankedMemRef:$source,
-                       XT_AnyCoord:$tileX,
-                       XT_AnyCoord:$tileY,
+                       Variadic<XT_AnyCoord>:$coords,
                        DenseI64ArrayAttr:$tile);
   let results = (outs XT_RankedTensor:$result);
   let hasCustomAssemblyFormat = 1;
@@ -33,8 +32,7 @@ def XT_StoreOp : XT_Op<"store"> {
   let summary = "store a tensor tile into a memref";
   let arguments = (ins XT_RankedTensor:$value,
                        XT_RankedMemRef:$dest,
-                       XT_AnyCoord:$tileX,
-                       XT_AnyCoord:$tileY,
+                       Variadic<XT_AnyCoord>:$coords,
                        DenseI64ArrayAttr:$tile);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;

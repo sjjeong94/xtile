@@ -164,3 +164,57 @@ If the repository becomes a git repository later, commit with:
 git add .
 git commit -m "feat: implement xt MLIR dialect project"
 ```
+
+## Chunk 5: Rank-Generic Tile Support
+
+### Task 6: Generalize load/store syntax and verification
+
+**Files:**
+- Modify: `include/xt/XTOps.td`
+- Modify: `lib/xt/XTOps.cpp`
+- Modify: `test/xt/parse.mlir`
+- Modify: `test/xt/invalid.mlir`
+
+- [ ] **Step 1: Write the failing tests**
+
+Add 1D and 3D parse coverage plus invalid rank/coordinate mismatch cases.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `build/bin/xt-opt test/xt/parse.mlir`
+Expected: FAIL on 1D/3D examples because the current implementation is rank-2 only.
+
+- [ ] **Step 3: Implement rank-generic parser and verifier logic**
+
+Allow variadic coordinates for `xt.load` and `xt.store`, generalize `tile=[...]`, and validate that tile rank, coordinate count, tensor rank, and memref rank all match.
+
+- [ ] **Step 4: Run focused verification**
+
+Run: `build/bin/xt-opt test/xt/parse.mlir`
+Expected: PASS for 1D, 2D, and 3D examples.
+
+### Task 7: Generalize lowering and elementwise ops
+
+**Files:**
+- Modify: `lib/xt/XTLowerToLoops.cpp`
+- Modify: `lib/xt/XTOps.cpp`
+- Modify: `test/xt/lower.mlir`
+- Modify: `test/xt/canonicalize.mlir`
+
+- [ ] **Step 1: Write the failing tests**
+
+Add 1D and 3D lowering coverage and a non-2D canonicalization case.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `build/bin/xt-opt --xt-lower-to-loops test/xt/lower.mlir`
+Expected: FAIL or produce incorrect IR because the lowering is rank-2 specific.
+
+- [ ] **Step 3: Implement rank-generic lowering**
+
+Build loop nests from the tensor rank and lower all elementwise and memory ops through the same rank-generic path.
+
+- [ ] **Step 4: Run full verification**
+
+Run: `cmake --build build --target check-xt`
+Expected: all tests pass for 1D, 2D, and 3D examples.

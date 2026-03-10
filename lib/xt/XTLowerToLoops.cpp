@@ -29,27 +29,56 @@ static Value asIndex(PatternRewriter &rewriter, Location loc, Value value) {
   return rewriter.create<arith::IndexCastOp>(loc, rewriter.getIndexType(), value);
 }
 
-static Value createTileLoopNest(PatternRewriter &rewriter, Location loc,
-                                RankedTensorType tensorType,
-                                function_ref<Value(OpBuilder &, Location, Value, Value)> bodyBuilder) {
+static Value createTensorLoopNest(
+    PatternRewriter &rewriter, Location loc, RankedTensorType tensorType,
+    function_ref<Value(OpBuilder &, Location, ValueRange)> bodyBuilder) {
   auto shape = tensorType.getShape();
   Value empty = tensor::EmptyOp::create(rewriter, loc, shape,
                                         tensorType.getElementType());
-  SmallVector<Value> lbs = {createIndexConstant(rewriter, loc, 0),
-                            createIndexConstant(rewriter, loc, 0)};
-  SmallVector<Value> ubs = {createIndexConstant(rewriter, loc, shape[0]),
-                            createIndexConstant(rewriter, loc, shape[1])};
-  SmallVector<Value> steps = {createIndexConstant(rewriter, loc, 1),
-                              createIndexConstant(rewriter, loc, 1)};
+  SmallVector<Value> lbs, ubs, steps;
+  for (int64_t dim : shape) {
+    lbs.push_back(createIndexConstant(rewriter, loc, 0));
+    ubs.push_back(createIndexConstant(rewriter, loc, dim));
+    steps.push_back(createIndexConstant(rewriter, loc, 1));
+  }
   scf::LoopNest loopNest = scf::buildLoopNest(
       rewriter, loc, lbs, ubs, steps, ValueRange{empty},
       [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs,
           ValueRange iterArgs) -> scf::ValueVector {
-        Value elem = bodyBuilder(builder, nestedLoc, ivs[0], ivs[1]);
-        Value next = builder.create<tensor::InsertOp>(nestedLoc, elem, iterArgs[0], ivs);
+        Value elem = bodyBuilder(builder, nestedLoc, ivs);
+        Value next =
+            builder.create<tensor::InsertOp>(nestedLoc, elem, iterArgs[0], ivs);
         return {next};
       });
   return loopNest.results.front();
+}
+
+static void createSideEffectLoopNest(
+    PatternRewriter &rewriter, Location loc, ArrayRef<int64_t> shape,
+    function_ref<void(OpBuilder &, Location, ValueRange)> bodyBuilder) {
+  SmallVector<Value> lbs, ubs, steps;
+  for (int64_t dim : shape) {
+    lbs.push_back(createIndexConstant(rewriter, loc, 0));
+    ubs.push_back(createIndexConstant(rewriter, loc, dim));
+    steps.push_back(createIndexConstant(rewriter, loc, 1));
+  }
+  scf::buildLoopNest(rewriter, loc, lbs, ubs, steps,
+                     [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) {
+                       bodyBuilder(builder, nestedLoc, ivs);
+                     });
+}
+
+static SmallVector<Value> computeBaseOffsets(PatternRewriter &rewriter, Location loc,
+                                             DenseI64ArrayAttr tile,
+                                             ValueRange coords) {
+  SmallVector<Value> offsets;
+  offsets.reserve(tile.size());
+  for (auto [coord, tileDim] : llvm::zip_equal(coords, tile.asArrayRef())) {
+    Value coordIndex = asIndex(rewriter, loc, coord);
+    Value tileSize = createIndexConstant(rewriter, loc, tileDim);
+    offsets.push_back(rewriter.create<arith::MulIOp>(loc, coordIndex, tileSize));
+  }
+  return offsets;
 }
 
 namespace {
@@ -81,21 +110,17 @@ struct LoadLowering : public OpRewritePattern<LoadOp> {
                                 PatternRewriter &rewriter) const override {
     auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
     Location loc = op.getLoc();
-    auto tile = op.getTile();
-    Value tileX = asIndex(rewriter, loc, op.getTileX());
-    Value tileY = asIndex(rewriter, loc, op.getTileY());
-    Value tileH = createIndexConstant(rewriter, loc, tile[0]);
-    Value tileW = createIndexConstant(rewriter, loc, tile[1]);
-    Value rowBase = rewriter.create<arith::MulIOp>(loc, tileX, tileH);
-    Value colBase = rewriter.create<arith::MulIOp>(loc, tileY, tileW);
+    SmallVector<Value> bases =
+        computeBaseOffsets(rewriter, loc, op.getTileAttr(), op.getCoords());
 
-    Value result = createTileLoopNest(
+    Value result = createTensorLoopNest(
         rewriter, loc, tensorType,
-        [&](OpBuilder &builder, Location nestedLoc, Value row, Value col) -> Value {
-          Value srcRow = builder.create<arith::AddIOp>(nestedLoc, rowBase, row);
-          Value srcCol = builder.create<arith::AddIOp>(nestedLoc, colBase, col);
-          return builder.create<memref::LoadOp>(nestedLoc, op.getSource(),
-                                                ValueRange{srcRow, srcCol});
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          SmallVector<Value> indices;
+          indices.reserve(ivs.size());
+          for (auto [base, iv] : llvm::zip_equal(bases, ivs))
+            indices.push_back(builder.create<arith::AddIOp>(nestedLoc, base, iv));
+          return builder.create<memref::LoadOp>(nestedLoc, op.getSource(), indices);
         });
     rewriter.replaceOp(op, result);
     return success();
@@ -108,29 +133,21 @@ struct StoreLowering : public OpRewritePattern<StoreOp> {
   LogicalResult matchAndRewrite(StoreOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
-    auto tile = op.getTile();
-    Value tileX = asIndex(rewriter, loc, op.getTileX());
-    Value tileY = asIndex(rewriter, loc, op.getTileY());
-    Value tileH = createIndexConstant(rewriter, loc, tile[0]);
-    Value tileW = createIndexConstant(rewriter, loc, tile[1]);
-    Value rowBase = rewriter.create<arith::MulIOp>(loc, tileX, tileH);
-    Value colBase = rewriter.create<arith::MulIOp>(loc, tileY, tileW);
+    auto tensorType = llvm::cast<RankedTensorType>(op.getValue().getType());
+    SmallVector<Value> bases =
+        computeBaseOffsets(rewriter, loc, op.getTileAttr(), op.getCoords());
 
-    SmallVector<Value> lbs = {createIndexConstant(rewriter, loc, 0),
-                              createIndexConstant(rewriter, loc, 0)};
-    SmallVector<Value> ubs = {createIndexConstant(rewriter, loc, tile[0]),
-                              createIndexConstant(rewriter, loc, tile[1])};
-    SmallVector<Value> steps = {createIndexConstant(rewriter, loc, 1),
-                                createIndexConstant(rewriter, loc, 1)};
-    scf::buildLoopNest(rewriter, loc, lbs, ubs, steps,
-                       [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) {
-                         Value src = builder.create<tensor::ExtractOp>(
-                             nestedLoc, op.getValue(), ivs);
-                         Value dstRow = builder.create<arith::AddIOp>(nestedLoc, rowBase, ivs[0]);
-                         Value dstCol = builder.create<arith::AddIOp>(nestedLoc, colBase, ivs[1]);
-                         builder.create<memref::StoreOp>(nestedLoc, src, op.getDest(),
-                                                         ValueRange{dstRow, dstCol});
-                       });
+    createSideEffectLoopNest(
+        rewriter, loc, tensorType.getShape(),
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) {
+          Value src =
+              builder.create<tensor::ExtractOp>(nestedLoc, op.getValue(), ivs);
+          SmallVector<Value> indices;
+          indices.reserve(ivs.size());
+          for (auto [base, iv] : llvm::zip_equal(bases, ivs))
+            indices.push_back(builder.create<arith::AddIOp>(nestedLoc, base, iv));
+          builder.create<memref::StoreOp>(nestedLoc, src, op.getDest(), indices);
+        });
     rewriter.eraseOp(op);
     return success();
   }
@@ -143,13 +160,11 @@ struct AddLowering : public OpRewritePattern<AddOp> {
                                 PatternRewriter &rewriter) const override {
     auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
     Location loc = op.getLoc();
-    Value result = createTileLoopNest(
+    Value result = createTensorLoopNest(
         rewriter, loc, tensorType,
-        [&](OpBuilder &builder, Location nestedLoc, Value row, Value col) -> Value {
-          Value lhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getLhs(),
-                                                        ValueRange{row, col});
-          Value rhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getRhs(),
-                                                        ValueRange{row, col});
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          Value lhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getLhs(), ivs);
+          Value rhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getRhs(), ivs);
           if (llvm::isa<FloatType>(tensorType.getElementType()))
             return builder.create<arith::AddFOp>(nestedLoc, lhs, rhs);
           return builder.create<arith::AddIOp>(nestedLoc, lhs, rhs);
@@ -168,11 +183,11 @@ struct ExpLowering : public OpRewritePattern<ExpOp> {
     if (!llvm::isa<FloatType>(tensorType.getElementType()))
       return rewriter.notifyMatchFailure(op, "exp lowering requires floating element type");
     Location loc = op.getLoc();
-    Value result = createTileLoopNest(
+    Value result = createTensorLoopNest(
         rewriter, loc, tensorType,
-        [&](OpBuilder &builder, Location nestedLoc, Value row, Value col) -> Value {
-          Value input = builder.create<tensor::ExtractOp>(nestedLoc, op.getInput(),
-                                                          ValueRange{row, col});
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          Value input =
+              builder.create<tensor::ExtractOp>(nestedLoc, op.getInput(), ivs);
           return builder.create<math::ExpOp>(nestedLoc, input);
         });
     rewriter.replaceOp(op, result);
