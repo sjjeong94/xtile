@@ -105,6 +105,22 @@ static Value castInt8ToType(OpBuilder &builder, Location loc, Value value, Type 
   return builder.create<arith::ExtSIOp>(loc, type, value);
 }
 
+static SmallVector<Value> computeBroadcastIndices(OpBuilder &builder, Location loc,
+                                                  RankedTensorType operandType,
+                                                  ValueRange resultIvs) {
+  int64_t rankOffset = resultIvs.size() - operandType.getRank();
+  SmallVector<Value> indices;
+  indices.reserve(operandType.getRank());
+  for (int64_t i = 0; i < operandType.getRank(); ++i) {
+    if (operandType.getDimSize(i) == 1) {
+      indices.push_back(builder.create<arith::ConstantIndexOp>(loc, 0));
+      continue;
+    }
+    indices.push_back(resultIvs[rankOffset + i]);
+  }
+  return indices;
+}
+
 namespace {
 struct GetTileBlockIdLowering : public OpRewritePattern<GetTileBlockIdOp> {
   GetTileBlockIdLowering(MLIRContext *context, int32_t x, int32_t y, int32_t z)
@@ -177,27 +193,6 @@ struct StoreLowering : public OpRewritePattern<StoreOp> {
   }
 };
 
-struct AddLowering : public OpRewritePattern<AddOp> {
-  using OpRewritePattern<AddOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(AddOp op,
-                                PatternRewriter &rewriter) const override {
-    auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
-    Location loc = op.getLoc();
-    Value result = createTensorLoopNest(
-        rewriter, loc, tensorType,
-        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
-          Value lhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getLhs(), ivs);
-          Value rhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getRhs(), ivs);
-          if (llvm::isa<FloatType>(tensorType.getElementType()))
-            return builder.create<arith::AddFOp>(nestedLoc, lhs, rhs);
-          return builder.create<arith::AddIOp>(nestedLoc, lhs, rhs);
-        });
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
 template <typename OpTy>
 struct UnaryElementwiseLowering : public OpRewritePattern<OpTy> {
   using OpRewritePattern<OpTy>::OpRewritePattern;
@@ -259,13 +254,24 @@ struct BinaryElementwiseLowering : public OpRewritePattern<OpTy> {
   LogicalResult matchAndRewrite(OpTy op,
                                 PatternRewriter &rewriter) const override {
     auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    auto lhsType = llvm::cast<RankedTensorType>(op.getLhs().getType());
+    auto rhsType = llvm::cast<RankedTensorType>(op.getRhs().getType());
     Location loc = op.getLoc();
     Value result = createTensorLoopNest(
         rewriter, loc, tensorType,
         [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
-          Value lhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getLhs(), ivs);
-          Value rhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getRhs(), ivs);
+          SmallVector<Value> lhsIvs =
+              computeBroadcastIndices(builder, nestedLoc, lhsType, ivs);
+          SmallVector<Value> rhsIvs =
+              computeBroadcastIndices(builder, nestedLoc, rhsType, ivs);
+          Value lhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getLhs(), lhsIvs);
+          Value rhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getRhs(), rhsIvs);
           bool isFloat = llvm::isa<FloatType>(tensorType.getElementType());
+          if constexpr (std::is_same_v<OpTy, AddOp>) {
+            if (isFloat)
+              return builder.create<arith::AddFOp>(nestedLoc, lhs, rhs).getResult();
+            return builder.create<arith::AddIOp>(nestedLoc, lhs, rhs).getResult();
+          }
           if constexpr (std::is_same_v<OpTy, SubOp>) {
             if (isFloat)
               return builder.create<arith::SubFOp>(nestedLoc, lhs, rhs).getResult();
@@ -277,27 +283,6 @@ struct BinaryElementwiseLowering : public OpRewritePattern<OpTy> {
             return builder.create<arith::MulIOp>(nestedLoc, lhs, rhs).getResult();
           }
           llvm_unreachable("unsupported binary op");
-        });
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
-struct ExpLowering : public OpRewritePattern<ExpOp> {
-  using OpRewritePattern<ExpOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ExpOp op,
-                                PatternRewriter &rewriter) const override {
-    auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
-    if (!llvm::isa<FloatType>(tensorType.getElementType()))
-      return rewriter.notifyMatchFailure(op, "exp lowering requires floating element type");
-    Location loc = op.getLoc();
-    Value result = createTensorLoopNest(
-        rewriter, loc, tensorType,
-        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
-          Value input =
-              builder.create<tensor::ExtractOp>(nestedLoc, op.getInput(), ivs);
-          return builder.create<math::ExpOp>(nestedLoc, input);
         });
     rewriter.replaceOp(op, result);
     return success();
@@ -404,8 +389,9 @@ public:
 
     RewritePatternSet patterns(context);
     patterns.add<GetTileBlockIdLowering>(context, blockIdX, blockIdY, blockIdZ);
-    patterns.add<LoadLowering, StoreLowering, AddLowering, BinaryElementwiseLowering<SubOp>,
-                 BinaryElementwiseLowering<MulOp>, ExpLowering,
+    patterns.add<LoadLowering, StoreLowering, BinaryElementwiseLowering<AddOp>,
+                 BinaryElementwiseLowering<SubOp>, BinaryElementwiseLowering<MulOp>,
+                 UnaryElementwiseLowering<ExpOp>,
                  UnaryElementwiseLowering<CosOp>, UnaryElementwiseLowering<SinOp>,
                  UnaryElementwiseLowering<ReciprocalOp>,
                  UnaryElementwiseLowering<RsqrtOp>,

@@ -199,24 +199,45 @@ void StoreOp::print(OpAsmPrinter &printer) {
 
 ParseResult AddOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand> operands;
-  return parseSingleTypeResultOp(parser, result, operands, 2);
+  return parseFunctionalTypeOp(parser, result, operands, 2);
 }
 
-void AddOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+void AddOp::print(OpAsmPrinter &printer) {
+  printer << "(";
+  printer.printOperands(getOperands());
+  printer << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getLhs().getType() << ", " << getRhs().getType() << ") -> "
+          << getResult().getType();
+}
 
 ParseResult SubOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand> operands;
-  return parseSingleTypeResultOp(parser, result, operands, 2);
+  return parseFunctionalTypeOp(parser, result, operands, 2);
 }
 
-void SubOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+void SubOp::print(OpAsmPrinter &printer) {
+  printer << "(";
+  printer.printOperands(getOperands());
+  printer << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getLhs().getType() << ", " << getRhs().getType() << ") -> "
+          << getResult().getType();
+}
 
 ParseResult MulOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand> operands;
-  return parseSingleTypeResultOp(parser, result, operands, 2);
+  return parseFunctionalTypeOp(parser, result, operands, 2);
 }
 
-void MulOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+void MulOp::print(OpAsmPrinter &printer) {
+  printer << "(";
+  printer.printOperands(getOperands());
+  printer << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getLhs().getType() << ", " << getRhs().getType() << ") -> "
+          << getResult().getType();
+}
 
 ParseResult ExpOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand> operands;
@@ -337,17 +358,45 @@ LogicalResult StoreOp::verify() {
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
 }
 
-static LogicalResult verifySameTensorTypes(Operation *op, Value lhs, Value rhs,
-                                           Value result) {
+static FailureOr<SmallVector<int64_t>> computeBroadcastShape(RankedTensorType lhsType,
+                                                             RankedTensorType rhsType) {
+  if (!lhsType || !rhsType || !lhsType.hasStaticShape() || !rhsType.hasStaticShape())
+    return failure();
+  int64_t resultRank = std::max(lhsType.getRank(), rhsType.getRank());
+  SmallVector<int64_t> shape(resultRank, 1);
+  for (int64_t i = 0; i < resultRank; ++i) {
+    int64_t lhsIndex = lhsType.getRank() - 1 - i;
+    int64_t rhsIndex = rhsType.getRank() - 1 - i;
+    int64_t lhsDim = lhsIndex >= 0 ? lhsType.getDimSize(lhsIndex) : 1;
+    int64_t rhsDim = rhsIndex >= 0 ? rhsType.getDimSize(rhsIndex) : 1;
+    if (lhsDim != rhsDim && lhsDim != 1 && rhsDim != 1)
+      return failure();
+    shape[resultRank - 1 - i] = std::max(lhsDim, rhsDim);
+  }
+  return shape;
+}
+
+static LogicalResult verifyBroadcastableTensorTypes(Operation *op, Value lhs, Value rhs,
+                                                    Value result) {
   auto lhsType = llvm::dyn_cast<RankedTensorType>(lhs.getType());
   auto rhsType = llvm::dyn_cast<RankedTensorType>(rhs.getType());
   auto resultType = llvm::dyn_cast<RankedTensorType>(result.getType());
   if (!lhsType || !rhsType || !resultType)
     return op->emitOpError("requires ranked tensor operands and result");
-  if (lhsType != rhsType || lhsType != resultType)
-    return op->emitOpError("requires operand and result tensor types to match");
-  if (!lhsType.hasStaticShape())
+  if (!lhsType.hasStaticShape() || !rhsType.hasStaticShape() || !resultType.hasStaticShape())
     return op->emitOpError("requires statically shaped tensors");
+  if (lhsType.getElementType() != rhsType.getElementType() ||
+      lhsType.getElementType() != resultType.getElementType())
+    return op->emitOpError("requires operand and result element types to match");
+  FailureOr<SmallVector<int64_t>> broadcastShape = computeBroadcastShape(lhsType, rhsType);
+  if (failed(broadcastShape))
+    return op->emitOpError("operands are not broadcast-compatible with result tensor type");
+  if (static_cast<int64_t>(broadcastShape->size()) != resultType.getRank())
+    return op->emitOpError("operands are not broadcast-compatible with result tensor type");
+  for (auto [expected, actual] : llvm::zip_equal(*broadcastShape, resultType.getShape())) {
+    if (expected != actual)
+      return op->emitOpError("operands are not broadcast-compatible with result tensor type");
+  }
   return success();
 }
 
@@ -365,15 +414,15 @@ static LogicalResult verifySameUnaryTensorTypes(Operation *op, Value input,
 }
 
 LogicalResult AddOp::verify() {
-  return verifySameTensorTypes(*this, getLhs(), getRhs(), getResult());
+  return verifyBroadcastableTensorTypes(*this, getLhs(), getRhs(), getResult());
 }
 
 LogicalResult SubOp::verify() {
-  return verifySameTensorTypes(*this, getLhs(), getRhs(), getResult());
+  return verifyBroadcastableTensorTypes(*this, getLhs(), getRhs(), getResult());
 }
 
 LogicalResult MulOp::verify() {
-  return verifySameTensorTypes(*this, getLhs(), getRhs(), getResult());
+  return verifyBroadcastableTensorTypes(*this, getLhs(), getRhs(), getResult());
 }
 
 LogicalResult ExpOp::verify() {

@@ -68,3 +68,10 @@ func.func @bad_4d_shape(%arg0: memref<64x32x32x32xf32>) {
 }
 
 // ERR: tile attribute must match tensor shape
+
+func.func @bad_broadcast_shape(%arg0: tensor<16x16xf32>, %arg1: tensor<8x16xf32>) -> tensor<16x16xf32> {
+  %0 = xt.add(%arg0, %arg1) : (tensor<16x16xf32>, tensor<8x16xf32>) -> tensor<16x16xf32>
+  func.return %0 : tensor<16x16xf32>
+}
+
+// ERR: operands are not broadcast-compatible with result tensor type

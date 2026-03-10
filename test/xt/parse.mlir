@@ -24,7 +24,7 @@ func.func @add(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf32>, %arg2: me
 
   %0 = xt.load(%arg0, %bid_x, %zero) {tile = [16, 16]} : memref<2048x16xf32> -> tensor<16x16xf32>
   %1 = xt.load(%arg1, %bid_x, %zero) {tile = [16, 16]} : memref<2048x16xf32> -> tensor<16x16xf32>
-  %2 = xt.add(%0, %1) : tensor<16x16xf32>
+  %2 = xt.add(%0, %1) : (tensor<16x16xf32>, tensor<16x16xf32>) -> tensor<16x16xf32>
   xt.store(%2, %arg2, %bid_x, %zero) {tile = [16, 16]} : tensor<16x16xf32> -> memref<2048x16xf32>
   func.return
 }
@@ -38,8 +38,8 @@ func.func @exp_3d(%arg0: memref<2048x32x32xf32>, %arg1: memref<2048x32x32xf32>) 
 }
 
 func.func @elementwise_ops(%arg0: tensor<16xf32>, %arg1: tensor<16xf32>) -> tensor<16xf32> {
-  %0 = xt.sub(%arg0, %arg1) : tensor<16xf32>
-  %1 = xt.mul(%0, %arg1) : tensor<16xf32>
+  %0 = xt.sub(%arg0, %arg1) : (tensor<16xf32>, tensor<16xf32>) -> tensor<16xf32>
+  %1 = xt.mul(%0, %arg1) : (tensor<16xf32>, tensor<16xf32>) -> tensor<16xf32>
   %2 = xt.cos(%1) : tensor<16xf32>
   %3 = xt.sin(%2) : tensor<16xf32>
   %4 = xt.reciprocal(%3) : tensor<16xf32>
@@ -88,6 +88,17 @@ func.func @exp_4d(%arg0: memref<64x32x32x32xf32>, %arg1: memref<64x32x32x32xf32>
   func.return
 }
 
+func.func @broadcast(%arg0: memref<2048x16xf32>, %arg1: memref<1x16xf32>, %arg2: memref<2048x16xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero) {tile = [16, 16]} : memref<2048x16xf32> -> tensor<16x16xf32>
+  %1 = xt.load(%arg1, %zero, %zero) {tile = [1, 16], shared = 1} : memref<1x16xf32> -> tensor<1x16xf32>
+  %2 = xt.add(%0, %1) : (tensor<16x16xf32>, tensor<1x16xf32>) -> tensor<16x16xf32>
+  xt.store(%2, %arg2, %bid_x, %zero) {tile = [16, 16]} : tensor<16x16xf32> -> memref<2048x16xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @exp_1d
 // CHECK: %[[BIDX1:.*]], %[[BIDY1:.*]], %[[BIDZ1:.*]] = xt.get_tile_block_id() : i32
 // CHECK: %[[LOAD1:.*]] = xt.load(%arg0, %[[BIDX1]]) {tile = [16]} : memref<2048xf32> -> tensor<16xf32>
@@ -103,8 +114,8 @@ func.func @exp_4d(%arg0: memref<64x32x32x32xf32>, %arg1: memref<64x32x32x32xf32>
 // CHECK: %[[EXP3:.*]] = xt.exp(%[[LOAD3]]) : tensor<16x16x16xf32>
 // CHECK: xt.store(%[[EXP3]], %arg1, %[[BIDX3]], %[[BIDY3]], %[[BIDZ3]]) {tile = [16, 16, 16]} : tensor<16x16x16xf32> -> memref<2048x32x32xf32>
 // CHECK-LABEL: func.func @elementwise_ops
-// CHECK: xt.sub(%arg0, %arg1) : tensor<16xf32>
-// CHECK: xt.mul
+// CHECK: xt.sub(%arg0, %arg1) : (tensor<16xf32>, tensor<16xf32>) -> tensor<16xf32>
+// CHECK: xt.mul(%{{.*}}, %arg1) : (tensor<16xf32>, tensor<16xf32>) -> tensor<16xf32>
 // CHECK: xt.cos
 // CHECK: xt.sin
 // CHECK: xt.reciprocal
@@ -132,3 +143,9 @@ func.func @exp_4d(%arg0: memref<64x32x32x32xf32>, %arg1: memref<64x32x32x32xf32>
 // CHECK: %[[LOAD4:.*]] = xt.load(%arg0, %[[BIDX4]], %[[BIDY4]], %[[BIDZ4]], %[[ZERO4:.*]]) {tile = [16, 16, 16, 16]} : memref<64x32x32x32xf32> -> tensor<16x16x16x16xf32>
 // CHECK: %[[EXP4:.*]] = xt.exp(%[[LOAD4]]) : tensor<16x16x16x16xf32>
 // CHECK: xt.store(%[[EXP4]], %arg1, %[[BIDX4]], %[[BIDY4]], %[[BIDZ4]], %[[ZERO4]]) {tile = [16, 16, 16, 16]} : tensor<16x16x16x16xf32> -> memref<64x32x32x32xf32>
+// CHECK-LABEL: func.func @broadcast
+// CHECK: %[[BIDXB:.*]], %[[BIDYB:.*]], %[[BIDZB:.*]] = xt.get_tile_block_id() : i32
+// CHECK: %[[LOADB0:.*]] = xt.load(%arg0, %[[BIDXB]], %[[ZEROB:.*]]) {tile = [16, 16]} : memref<2048x16xf32> -> tensor<16x16xf32>
+// CHECK: %[[LOADB1:.*]] = xt.load(%arg1, %[[ZEROB]], %[[ZEROB]]) {tile = [1, 16], shared = 1} : memref<1x16xf32> -> tensor<1x16xf32>
+// CHECK: %[[ADDB:.*]] = xt.add(%[[LOADB0]], %[[LOADB1]]) : (tensor<16x16xf32>, tensor<1x16xf32>) -> tensor<16x16xf32>
+// CHECK: xt.store(%[[ADDB]], %arg2, %[[BIDXB]], %[[ZEROB]]) {tile = [16, 16]} : tensor<16x16xf32> -> memref<2048x16xf32>
