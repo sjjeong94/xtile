@@ -78,6 +78,7 @@ static ParseResult parseTileAttr(OpAsmParser &parser,
                                  OperationState &result) {
   Builder &builder = parser.getBuilder();
   SmallVector<int64_t> tileDims;
+  IntegerAttr sharedAttr;
   if (parser.parseLBrace() || parser.parseKeyword("tile") || parser.parseEqual() ||
       parser.parseLSquare())
     return failure();
@@ -87,17 +88,32 @@ static ParseResult parseTileAttr(OpAsmParser &parser,
       return failure();
     tileDims.push_back(dim);
   } while (succeeded(parser.parseOptionalComma()));
-  if (parser.parseRSquare() || parser.parseRBrace())
+  if (parser.parseRSquare())
+    return failure();
+  if (succeeded(parser.parseOptionalComma())) {
+    int64_t sharedValue;
+    if (parser.parseKeyword("shared") || parser.parseEqual() ||
+        parser.parseInteger(sharedValue))
+      return failure();
+    sharedAttr = builder.getI64IntegerAttr(sharedValue);
+  }
+  if (parser.parseRBrace())
     return failure();
   result.addAttribute("tile", builder.getDenseI64ArrayAttr(tileDims));
+  if (sharedAttr)
+    result.addAttribute("shared", sharedAttr);
   return success();
 }
 
-static void printTileAttr(OpAsmPrinter &printer, DenseI64ArrayAttr tile) {
+static void printTileAttr(OpAsmPrinter &printer, DenseI64ArrayAttr tile,
+                          IntegerAttr shared = {}) {
   printer << " {tile = [";
   llvm::interleaveComma(tile.asArrayRef(), printer,
                         [&](int64_t dim) { printer << dim; });
-  printer << "]}";
+  printer << "]";
+  if (shared)
+    printer << ", shared = " << shared.getInt();
+  printer << "}";
 }
 
 static void printSingleTypeResultOp(OpAsmPrinter &printer, Operation *op) {
@@ -147,7 +163,7 @@ void LoadOp::print(OpAsmPrinter &printer) {
   for (Value coord : getCoords())
     printer << ", " << coord;
   printer << ")";
-  printTileAttr(printer, getTileAttr());
+  printTileAttr(printer, getTileAttr(), getSharedAttr());
   printer << " : " << getSource().getType() << " -> " << getResult().getType();
 }
 
@@ -299,6 +315,9 @@ LogicalResult LoadOp::verify() {
     return emitOpError("requires at least one coordinate");
   if (failed(verifyTileAttr(*this, getTileAttr(), tensorType)))
     return failure();
+  if (auto shared = getSharedAttr();
+      shared && shared.getInt() != 0 && shared.getInt() != 1)
+    return emitOpError("shared attribute must be 0 or 1");
   if (static_cast<int64_t>(getCoords().size()) != tensorType.getRank())
     return emitOpError("coordinate count must match tile rank");
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
@@ -394,9 +413,15 @@ LogicalResult MatmulOp::verify() {
   auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
   if (failed(verifyMatmulLikeShape(*this, lhsType, rhsType, resultType)))
     return failure();
-  if (lhsType.getElementType() != rhsType.getElementType() ||
-      lhsType.getElementType() != resultType.getElementType())
-    return emitOpError("requires matching element types");
+  if (lhsType.getElementType() == rhsType.getElementType() &&
+      lhsType.getElementType() == resultType.getElementType())
+    return success();
+  if (lhsType.getElementType().isInteger(8) &&
+      rhsType.getElementType().isInteger(8) &&
+      (resultType.getElementType().isF32() || resultType.getElementType().isBF16()))
+    return success();
+  return emitOpError(
+      "requires matching element types or i8 inputs with f32/bf16 result");
   return success();
 }
 

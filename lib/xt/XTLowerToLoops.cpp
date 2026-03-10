@@ -91,6 +91,14 @@ static Value createFloatLikeZero(OpBuilder &builder, Location loc, Type type) {
       loc, FloatAttr::get(type, 0.0));
 }
 
+static Value createZeroValue(OpBuilder &builder, Location loc, Type type) {
+  if (auto floatType = llvm::dyn_cast<FloatType>(type))
+    return builder.create<arith::ConstantOp>(loc, FloatAttr::get(floatType, 0.0));
+  if (auto intType = llvm::dyn_cast<IntegerType>(type))
+    return builder.create<arith::ConstantOp>(loc, IntegerAttr::get(intType, 0));
+  llvm_unreachable("unsupported zero element type");
+}
+
 static Value castInt8ToType(OpBuilder &builder, Location loc, Value value, Type type) {
   if (type.isF32() || type.isBF16())
     return builder.create<arith::SIToFPOp>(loc, type, value);
@@ -303,23 +311,32 @@ struct MatmulLowering : public OpRewritePattern<MatmulOp> {
                                 PatternRewriter &rewriter) const override {
     auto resultType = llvm::cast<RankedTensorType>(op.getResult().getType());
     auto lhsType = llvm::cast<RankedTensorType>(op.getLhs().getType());
+    auto lhsElemType = lhsType.getElementType();
+    auto rhsElemType =
+        llvm::cast<RankedTensorType>(op.getRhs().getType()).getElementType();
+    auto resultElemType = resultType.getElementType();
+    bool resultIsFloat = llvm::isa<FloatType>(resultElemType);
     Location loc = op.getLoc();
     Value result = createTensorLoopNest(
         rewriter, loc, resultType,
         [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
-          Value acc = createFloatLikeZero(builder, nestedLoc, resultType.getElementType());
+          Value acc = createZeroValue(builder, nestedLoc, resultElemType);
           for (int64_t k = 0; k < lhsType.getDimSize(1); ++k) {
             Value kVal = createIndexConstant(rewriter, nestedLoc, k);
             Value lhs = builder.create<tensor::ExtractOp>(
                 nestedLoc, op.getLhs(), ValueRange{ivs[0], kVal});
             Value rhs = builder.create<tensor::ExtractOp>(
                 nestedLoc, op.getRhs(), ValueRange{kVal, ivs[1]});
+            if (lhsElemType.isInteger(8) && rhsElemType.isInteger(8) && resultIsFloat) {
+              lhs = castInt8ToType(builder, nestedLoc, lhs, resultElemType);
+              rhs = castInt8ToType(builder, nestedLoc, rhs, resultElemType);
+            }
             Value prod;
-            if (llvm::isa<FloatType>(resultType.getElementType()))
+            if (resultIsFloat)
               prod = builder.create<arith::MulFOp>(nestedLoc, lhs, rhs).getResult();
             else
               prod = builder.create<arith::MulIOp>(nestedLoc, lhs, rhs).getResult();
-            if (llvm::isa<FloatType>(resultType.getElementType()))
+            if (resultIsFloat)
               acc = builder.create<arith::AddFOp>(nestedLoc, acc, prod).getResult();
             else
               acc = builder.create<arith::AddIOp>(nestedLoc, acc, prod).getResult();

@@ -63,3 +63,17 @@ func.func @exp(%arg0: memref<2048x32x32f32>, %arg1: memref<2048x32x32f32>) {
   func.return
 }
 ```
+
+### Shared examples
+```mlir
+func.func @shared(%arg0: memref<128x256xi8>, %arg1: memref<256x512xi8>, %arg2: memref<128x512xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero) {tile=[64, 256]} : memref<128x256xi8> -> tensor<64x256xi8>
+  %1 = xt.load(%arg1, %zero, %bid_y) {tile=[256, 64], shared=1} : memref<256x512xi8> -> tensor<256x64xi8>
+  %2 = xt.matmul(%0, %1) : (tensor<64x256xi8>, tensor<256x64xi8>) -> tensor<64x64xf32>
+  xt.store(%2, %arg2, %bid_x, %bid_y) {tile=[64, 64]} : tensor<64x64xf32> -> memref<128x512xf32>
+  func.return
+}
+```

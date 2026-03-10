@@ -35,18 +35,18 @@ The initial operation set is:
 - `xt.matmul` performing rank-2 matrix multiplication
 - `xt.mma` performing rank-2 matrix multiply-accumulate with `i8` inputs and `f32`/`bf16` accumulator+result tensors
 
-`xt.load` and `xt.store` require a `tile = [...]` attribute. The attribute length must match the operation rank, and that rank must match the memref rank, tensor rank, and coordinate operand count.
+`xt.load` and `xt.store` require a `tile = [...]` attribute. The attribute length must match the operation rank, and that rank must match the memref rank, tensor rank, and coordinate operand count. `xt.load` also supports an optional `shared = 1` hint attribute that is preserved by parsing/printing and verification but ignored by lowering.
 
 ## Verification Rules
 
 - `xt.get_tile_block_id` always returns exactly three `i32` values.
-- `xt.load` requires a ranked memref source, `N` index-like tile coordinates, a ranked tensor result of rank `N`, and a valid `tile` attribute of length `N`.
+- `xt.load` requires a ranked memref source, `N` index-like tile coordinates, a ranked tensor result of rank `N`, and a valid `tile` attribute of length `N`. If present, `shared` must be `0` or `1`.
 - `xt.store` requires a ranked tensor input, ranked memref destination, `N` index-like tile coordinates, and a `tile` attribute matching the tensor shape.
 - `xt.add` requires both operands and the result to have the same statically shaped ranked tensor type.
 - `xt.sub` and `xt.mul` require both operands and the result to have the same statically shaped ranked tensor type.
 - `xt.exp` requires the operand and result to have the same statically shaped ranked tensor type.
 - Unary elementwise math ops require the operand and result to have the same statically shaped ranked tensor type.
-- `xt.matmul` requires rank-2 tensors with shapes `MxK`, `KxN`, and `MxN`.
+- `xt.matmul` requires rank-2 tensors with shapes `MxK`, `KxN`, and `MxN`. Element types are either all identical or `i8`, `i8`, and `f32`/`bf16` for mixed-precision accumulation.
 - `xt.mma` requires rank-2 tensors with shapes `MxK`, `KxN`, `MxN`, and `MxN`; input element types must be `i8`, accumulator/result element types must be `f32` or `bf16`, and accumulator/result types must match.
 
 ## Canonicalization

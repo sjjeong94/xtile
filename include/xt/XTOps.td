@@ -22,7 +22,8 @@ def XT_LoadOp : XT_Op<"load"> {
   let summary = "load a tensor tile from a memref";
   let arguments = (ins XT_RankedMemRef:$source,
                        Variadic<XT_AnyCoord>:$coords,
-                       DenseI64ArrayAttr:$tile);
+                       DenseI64ArrayAttr:$tile,
+                       OptionalAttr<I64Attr>:$shared);
   let results = (outs XT_RankedTensor:$result);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;

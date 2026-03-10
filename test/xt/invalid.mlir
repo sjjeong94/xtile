@@ -52,3 +52,11 @@ func.func @bad_mma_acc_type(%a: tensor<16x32xi8>, %b: tensor<32x8xi8>, %acc: ten
 }
 
 // ERR: mma requires f32 or bf16 accumulator and result tensors
+
+func.func @bad_shared_hint(%arg0: memref<256x512xi8>) {
+  %zero = arith.constant 0 : i32
+  %0 = xt.load(%arg0, %zero, %zero) {tile = [256, 64], shared = 2} : memref<256x512xi8> -> tensor<256x64xi8>
+  func.return
+}
+
+// ERR: shared attribute must be 0 or 1

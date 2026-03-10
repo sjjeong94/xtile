@@ -56,6 +56,17 @@ func.func @contract_ops(%a: tensor<16x32xf32>, %b: tensor<32x8xf32>, %ai8: tenso
   func.return %0, %1 : tensor<16x8xf32>, tensor<16x8xf32>
 }
 
+func.func @shared(%arg0: memref<128x256xi8>, %arg1: memref<256x512xi8>, %arg2: memref<128x512xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero) {tile = [64, 256]} : memref<128x256xi8> -> tensor<64x256xi8>
+  %1 = xt.load(%arg1, %zero, %bid_y) {tile = [256, 64], shared = 1} : memref<256x512xi8> -> tensor<256x64xi8>
+  %2 = xt.matmul(%0, %1) : (tensor<64x256xi8>, tensor<256x64xi8>) -> tensor<64x64xf32>
+  xt.store(%2, %arg2, %bid_x, %bid_y) {tile = [64, 64]} : tensor<64x64xf32> -> memref<128x512xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @exp_1d
 // CHECK: %[[BIDX1:.*]], %[[BIDY1:.*]], %[[BIDZ1:.*]] = xt.get_tile_block_id() : i32
 // CHECK: %[[LOAD1:.*]] = xt.load(%arg0, %[[BIDX1]]) {tile = [16]} : memref<2048xf32> -> tensor<16xf32>
@@ -83,3 +94,9 @@ func.func @contract_ops(%a: tensor<16x32xf32>, %b: tensor<32x8xf32>, %ai8: tenso
 // CHECK-LABEL: func.func @contract_ops
 // CHECK: xt.matmul(%arg0, %arg1) : (tensor<16x32xf32>, tensor<32x8xf32>) -> tensor<16x8xf32>
 // CHECK: xt.mma(%arg2, %arg3, %arg4) : (tensor<16x32xi8>, tensor<32x8xi8>, tensor<16x8xf32>) -> tensor<16x8xf32>
+// CHECK-LABEL: func.func @shared
+// CHECK: %[[BIDXS:.*]], %[[BIDYS:.*]], %[[BIDZS:.*]] = xt.get_tile_block_id() : i32
+// CHECK: %[[LOADS0:.*]] = xt.load(%arg0, %[[BIDXS]], %[[ZERO_SHARED:.*]]) {tile = [64, 256]} : memref<128x256xi8> -> tensor<64x256xi8>
+// CHECK: %[[LOADS1:.*]] = xt.load(%arg1, %[[ZERO_SHARED]], %[[BIDYS]]) {tile = [256, 64], shared = 1} : memref<256x512xi8> -> tensor<256x64xi8>
+// CHECK: %[[MM:.*]] = xt.matmul(%[[LOADS0]], %[[LOADS1]]) : (tensor<64x256xi8>, tensor<256x64xi8>) -> tensor<64x64xf32>
+// CHECK: xt.store(%[[MM]], %arg2, %[[BIDXS]], %[[BIDYS]]) {tile = [64, 64]} : tensor<64x64xf32> -> memref<128x512xf32>

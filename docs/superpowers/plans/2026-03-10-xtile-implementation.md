@@ -258,6 +258,36 @@ Expected: new valid parse cases succeed and invalid cases fail with the intended
 
 Add representative lowering coverage for unary ops, binary ops, `matmul`, and `mma`.
 
+## Chunk 7: Shared Load Hint
+
+### Task 10: Add the shared load hint and shared example coverage
+
+**Files:**
+- Modify: `include/xt/XTOps.td`
+- Modify: `lib/xt/XTOps.cpp`
+- Modify: `test/xt/parse.mlir`
+- Modify: `test/xt/invalid.mlir`
+- Modify: `test/xt/lower.mlir`
+- Modify: `xtile.md`
+
+- [ ] **Step 1: Write the failing tests**
+
+Add parse, invalid, and lowering coverage for `xt.load(...){tile=[...], shared=1}`.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `build/bin/xt-opt test/xt/parse.mlir`
+Expected: FAIL because `xt.load` does not parse the `shared` attribute yet.
+
+- [ ] **Step 3: Implement parser/printer/verifier support**
+
+Add an optional `shared` integer attribute to `xt.load`, preserve it through round-trip printing, and reject values other than `0` and `1`.
+
+- [ ] **Step 4: Run focused verification**
+
+Run: `build/bin/xt-opt test/xt/parse.mlir && not build/bin/xt-opt test/xt/invalid.mlir`
+Expected: shared-hint examples succeed and invalid shared values fail with the intended diagnostic.
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `build/bin/xt-opt --xt-lower-to-loops test/xt/lower.mlir`
