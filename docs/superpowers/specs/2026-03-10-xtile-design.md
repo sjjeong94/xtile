@@ -35,13 +35,13 @@ The initial operation set is:
 - `xt.matmul` performing rank-2 matrix multiplication
 - `xt.mma` performing rank-2 matrix multiply-accumulate with `i8` inputs and `f32`/`bf16` accumulator+result tensors
 
-`xt.load` and `xt.store` require a `tile = [...]` attribute. The attribute length must match the operation rank, and that rank must match the memref rank, tensor rank, and coordinate operand count. `xt.load` also supports an optional `shared = 1` hint attribute that is preserved by parsing/printing and verification but ignored by lowering.
+`xt.load` and `xt.store` require a `tile = [...]` attribute. The attribute length must match the operation rank, and that rank must match the memref rank, tensor rank, and coordinate operand count. `xt.load` also supports an optional `shared = 1` hint attribute that is preserved by parsing/printing and verification but ignored by lowering. `memref` operands may use dynamic dimensions as long as rank and element type still match the tile tensor. The same rank-generic contract applies through at least rank 4, with tested 1D, 2D, 3D, and 4D examples.
 
 ## Verification Rules
 
 - `xt.get_tile_block_id` always returns exactly three `i32` values.
-- `xt.load` requires a ranked memref source, `N` index-like tile coordinates, a ranked tensor result of rank `N`, and a valid `tile` attribute of length `N`. If present, `shared` must be `0` or `1`.
-- `xt.store` requires a ranked tensor input, ranked memref destination, `N` index-like tile coordinates, and a `tile` attribute matching the tensor shape.
+- `xt.load` requires a ranked memref source, `N` index-like tile coordinates, a ranked tensor result of rank `N`, and a valid `tile` attribute of length `N`. If present, `shared` must be `0` or `1`. The memref may have dynamic dimensions.
+- `xt.store` requires a ranked tensor input, ranked memref destination, `N` index-like tile coordinates, and a `tile` attribute matching the tensor shape. The destination memref may have dynamic dimensions.
 - `xt.add` requires both operands and the result to have the same statically shaped ranked tensor type.
 - `xt.sub` and `xt.mul` require both operands and the result to have the same statically shaped ranked tensor type.
 - `xt.exp` requires the operand and result to have the same statically shaped ranked tensor type.
@@ -81,7 +81,8 @@ The pass pipeline target is: `xt` -> `scf` / `tensor` / `memref` / `arith` / `ma
 
 lit tests will cover:
 
-- Parser/printer round-trip for 1D, 2D, and 3D sample IR
+- Parser/printer round-trip for 1D, 2D, 3D, and 4D sample IR
+- Parser/printer round-trip for dynamic-shape memref sample IR
 - Verifier failures for invalid tile rank, coordinate-count mismatch, tile shapes, and mismatched types
 - Canonicalization of `xt.add` with zero tensors
 - Lowering output that removes all `xt` ops in favor of standard dialects

@@ -288,6 +288,63 @@ Add an optional `shared` integer attribute to `xt.load`, preserve it through rou
 Run: `build/bin/xt-opt test/xt/parse.mlir && not build/bin/xt-opt test/xt/invalid.mlir`
 Expected: shared-hint examples succeed and invalid shared values fail with the intended diagnostic.
 
+## Chunk 8: Dynamic MemRef Support
+
+### Task 11: Lock in dynamic memref example coverage
+
+**Files:**
+- Modify: `test/xt/parse.mlir`
+- Modify: `test/xt/lower.mlir`
+- Modify: `xtile.md`
+- Modify: `docs/superpowers/specs/2026-03-10-xtile-design.md`
+
+- [ ] **Step 1: Write the failing tests**
+
+Add dynamic memref examples using `memref<?x...>` and `memref<...x?>` to parse and lowering coverage.
+
+- [ ] **Step 2: Run tests to verify current behavior**
+
+Run: `build/bin/xt-opt test/xt/parse.mlir`
+Expected: PASS if dynamic memrefs are already accepted, otherwise FAIL in `xt.load`/`xt.store` verification.
+
+- [ ] **Step 3: Align implementation and docs**
+
+If needed, relax `xt.load`/`xt.store` verification to allow dynamic memref dimensions while keeping tensor tiles static, then update the design and examples to match.
+
+- [ ] **Step 4: Run full verification**
+
+Run: `cmake --build build --target check-xt`
+Expected: dynamic memref examples parse and lower successfully with the rest of the suite still green.
+
+## Chunk 9: 4D Tile Coverage
+
+### Task 12: Add tested 4D load/store examples
+
+**Files:**
+- Modify: `test/xt/parse.mlir`
+- Modify: `test/xt/lower.mlir`
+- Modify: `test/xt/invalid.mlir`
+- Modify: `xtile.md`
+- Modify: `docs/superpowers/specs/2026-03-10-xtile-design.md`
+
+- [ ] **Step 1: Write the failing tests**
+
+Add 4D parse, lowering, and invalid tile-shape coverage for rank-4 `xt.load` and `xt.store`.
+
+- [ ] **Step 2: Run tests to verify current behavior**
+
+Run: `build/bin/xt-opt test/xt/parse.mlir`
+Expected: PASS if the existing rank-generic implementation already handles 4D, otherwise FAIL in parser/verifier/lowering.
+
+- [ ] **Step 3: Align implementation and docs**
+
+If needed, fix any rank-4 corner cases in verifier or lowering; otherwise, update docs to explicitly state that 4D is supported and tested.
+
+- [ ] **Step 4: Run full verification**
+
+Run: `cmake --build build --target check-xt`
+Expected: 4D examples parse and lower successfully with the rest of the suite still green.
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `build/bin/xt-opt --xt-lower-to-loops test/xt/lower.mlir`

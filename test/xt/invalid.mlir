@@ -60,3 +60,11 @@ func.func @bad_shared_hint(%arg0: memref<256x512xi8>) {
 }
 
 // ERR: shared attribute must be 0 or 1
+
+func.func @bad_4d_shape(%arg0: memref<64x32x32x32xf32>) {
+  %zero = arith.constant 0 : i32
+  %0 = xt.load(%arg0, %zero, %zero, %zero, %zero) {tile = [16, 16, 8, 16]} : memref<64x32x32x32xf32> -> tensor<16x16x16x16xf32>
+  func.return
+}
+
+// ERR: tile attribute must match tensor shape

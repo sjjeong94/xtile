@@ -67,6 +67,27 @@ func.func @shared(%arg0: memref<128x256xi8>, %arg1: memref<256x512xi8>, %arg2: m
   func.return
 }
 
+func.func @dynamic_shared(%arg0: memref<?x256xi8>, %arg1: memref<256x?xi8>, %arg2: memref<128x512xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero) {tile = [64, 256]} : memref<?x256xi8> -> tensor<64x256xi8>
+  %1 = xt.load(%arg1, %zero, %bid_y) {tile = [256, 64], shared = 1} : memref<256x?xi8> -> tensor<256x64xi8>
+  %2 = xt.matmul(%0, %1) : (tensor<64x256xi8>, tensor<256x64xi8>) -> tensor<64x64xf32>
+  xt.store(%2, %arg2, %bid_x, %bid_y) {tile = [64, 64]} : tensor<64x64xf32> -> memref<128x512xf32>
+  func.return
+}
+
+func.func @exp_4d(%arg0: memref<64x32x32x32xf32>, %arg1: memref<64x32x32x32xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %bid_y, %bid_z, %zero) {tile = [16, 16, 16, 16]} : memref<64x32x32x32xf32> -> tensor<16x16x16x16xf32>
+  %1 = xt.exp(%0) : tensor<16x16x16x16xf32>
+  xt.store(%1, %arg1, %bid_x, %bid_y, %bid_z, %zero) {tile = [16, 16, 16, 16]} : tensor<16x16x16x16xf32> -> memref<64x32x32x32xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @exp_1d
 // CHECK: %[[BIDX1:.*]], %[[BIDY1:.*]], %[[BIDZ1:.*]] = xt.get_tile_block_id() : i32
 // CHECK: %[[LOAD1:.*]] = xt.load(%arg0, %[[BIDX1]]) {tile = [16]} : memref<2048xf32> -> tensor<16xf32>
@@ -100,3 +121,14 @@ func.func @shared(%arg0: memref<128x256xi8>, %arg1: memref<256x512xi8>, %arg2: m
 // CHECK: %[[LOADS1:.*]] = xt.load(%arg1, %[[ZERO_SHARED]], %[[BIDYS]]) {tile = [256, 64], shared = 1} : memref<256x512xi8> -> tensor<256x64xi8>
 // CHECK: %[[MM:.*]] = xt.matmul(%[[LOADS0]], %[[LOADS1]]) : (tensor<64x256xi8>, tensor<256x64xi8>) -> tensor<64x64xf32>
 // CHECK: xt.store(%[[MM]], %arg2, %[[BIDXS]], %[[BIDYS]]) {tile = [64, 64]} : tensor<64x64xf32> -> memref<128x512xf32>
+// CHECK-LABEL: func.func @dynamic_shared
+// CHECK: %[[BIDXD:.*]], %[[BIDYD:.*]], %[[BIDZD:.*]] = xt.get_tile_block_id() : i32
+// CHECK: %[[LOADD0:.*]] = xt.load(%arg0, %[[BIDXD]], %[[ZERO_DYNAMIC:.*]]) {tile = [64, 256]} : memref<?x256xi8> -> tensor<64x256xi8>
+// CHECK: %[[LOADD1:.*]] = xt.load(%arg1, %[[ZERO_DYNAMIC]], %[[BIDYD]]) {tile = [256, 64], shared = 1} : memref<256x?xi8> -> tensor<256x64xi8>
+// CHECK: %[[MMD:.*]] = xt.matmul(%[[LOADD0]], %[[LOADD1]]) : (tensor<64x256xi8>, tensor<256x64xi8>) -> tensor<64x64xf32>
+// CHECK: xt.store(%[[MMD]], %arg2, %[[BIDXD]], %[[BIDYD]]) {tile = [64, 64]} : tensor<64x64xf32> -> memref<128x512xf32>
+// CHECK-LABEL: func.func @exp_4d
+// CHECK: %[[BIDX4:.*]], %[[BIDY4:.*]], %[[BIDZ4:.*]] = xt.get_tile_block_id() : i32
+// CHECK: %[[LOAD4:.*]] = xt.load(%arg0, %[[BIDX4]], %[[BIDY4]], %[[BIDZ4]], %[[ZERO4:.*]]) {tile = [16, 16, 16, 16]} : memref<64x32x32x32xf32> -> tensor<16x16x16x16xf32>
+// CHECK: %[[EXP4:.*]] = xt.exp(%[[LOAD4]]) : tensor<16x16x16x16xf32>
+// CHECK: xt.store(%[[EXP4]], %arg1, %[[BIDX4]], %[[BIDY4]], %[[BIDZ4]], %[[ZERO4]]) {tile = [16, 16, 16, 16]} : tensor<16x16x16x16xf32> -> memref<64x32x32x32xf32>
