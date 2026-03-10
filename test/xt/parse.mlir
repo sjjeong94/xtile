@@ -37,6 +37,25 @@ func.func @exp_3d(%arg0: memref<2048x32x32xf32>, %arg1: memref<2048x32x32xf32>) 
   func.return
 }
 
+func.func @elementwise_ops(%arg0: tensor<16xf32>, %arg1: tensor<16xf32>) -> tensor<16xf32> {
+  %0 = xt.sub(%arg0, %arg1) : tensor<16xf32>
+  %1 = xt.mul(%0, %arg1) : tensor<16xf32>
+  %2 = xt.cos(%1) : tensor<16xf32>
+  %3 = xt.sin(%2) : tensor<16xf32>
+  %4 = xt.reciprocal(%3) : tensor<16xf32>
+  %5 = xt.rsqrt(%4) : tensor<16xf32>
+  %6 = xt.sigmoid(%5) : tensor<16xf32>
+  %7 = xt.tanh(%6) : tensor<16xf32>
+  %8 = xt.silu(%7) : tensor<16xf32>
+  func.return %8 : tensor<16xf32>
+}
+
+func.func @contract_ops(%a: tensor<16x32xf32>, %b: tensor<32x8xf32>, %ai8: tensor<16x32xi8>, %bi8: tensor<32x8xi8>, %acc: tensor<16x8xf32>) -> (tensor<16x8xf32>, tensor<16x8xf32>) {
+  %0 = xt.matmul(%a, %b) : (tensor<16x32xf32>, tensor<32x8xf32>) -> tensor<16x8xf32>
+  %1 = xt.mma(%ai8, %bi8, %acc) : (tensor<16x32xi8>, tensor<32x8xi8>, tensor<16x8xf32>) -> tensor<16x8xf32>
+  func.return %0, %1 : tensor<16x8xf32>, tensor<16x8xf32>
+}
+
 // CHECK-LABEL: func.func @exp_1d
 // CHECK: %[[BIDX1:.*]], %[[BIDY1:.*]], %[[BIDZ1:.*]] = xt.get_tile_block_id() : i32
 // CHECK: %[[LOAD1:.*]] = xt.load(%arg0, %[[BIDX1]]) {tile = [16]} : memref<2048xf32> -> tensor<16xf32>
@@ -51,3 +70,16 @@ func.func @exp_3d(%arg0: memref<2048x32x32xf32>, %arg1: memref<2048x32x32xf32>) 
 // CHECK: %[[LOAD3:.*]] = xt.load(%arg0, %[[BIDX3]], %[[BIDY3]], %[[BIDZ3]]) {tile = [16, 16, 16]} : memref<2048x32x32xf32> -> tensor<16x16x16xf32>
 // CHECK: %[[EXP3:.*]] = xt.exp(%[[LOAD3]]) : tensor<16x16x16xf32>
 // CHECK: xt.store(%[[EXP3]], %arg1, %[[BIDX3]], %[[BIDY3]], %[[BIDZ3]]) {tile = [16, 16, 16]} : tensor<16x16x16xf32> -> memref<2048x32x32xf32>
+// CHECK-LABEL: func.func @elementwise_ops
+// CHECK: xt.sub(%arg0, %arg1) : tensor<16xf32>
+// CHECK: xt.mul
+// CHECK: xt.cos
+// CHECK: xt.sin
+// CHECK: xt.reciprocal
+// CHECK: xt.rsqrt
+// CHECK: xt.sigmoid
+// CHECK: xt.tanh
+// CHECK: xt.silu
+// CHECK-LABEL: func.func @contract_ops
+// CHECK: xt.matmul(%arg0, %arg1) : (tensor<16x32xf32>, tensor<32x8xf32>) -> tensor<16x8xf32>
+// CHECK: xt.mma(%arg2, %arg3, %arg4) : (tensor<16x32xi8>, tensor<32x8xi8>, tensor<16x8xf32>) -> tensor<16x8xf32>

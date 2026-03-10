@@ -81,6 +81,22 @@ static SmallVector<Value> computeBaseOffsets(PatternRewriter &rewriter, Location
   return offsets;
 }
 
+static Value createFloatLikeOne(OpBuilder &builder, Location loc, Type type) {
+  return builder.create<arith::ConstantOp>(
+      loc, FloatAttr::get(type, 1.0));
+}
+
+static Value createFloatLikeZero(OpBuilder &builder, Location loc, Type type) {
+  return builder.create<arith::ConstantOp>(
+      loc, FloatAttr::get(type, 0.0));
+}
+
+static Value castInt8ToType(OpBuilder &builder, Location loc, Value value, Type type) {
+  if (type.isF32() || type.isBF16())
+    return builder.create<arith::SIToFPOp>(loc, type, value);
+  return builder.create<arith::ExtSIOp>(loc, type, value);
+}
+
 namespace {
 struct GetTileBlockIdLowering : public OpRewritePattern<GetTileBlockIdOp> {
   GetTileBlockIdLowering(MLIRContext *context, int32_t x, int32_t y, int32_t z)
@@ -174,6 +190,91 @@ struct AddLowering : public OpRewritePattern<AddOp> {
   }
 };
 
+template <typename OpTy>
+struct UnaryElementwiseLowering : public OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(OpTy op,
+                                PatternRewriter &rewriter) const override {
+    auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    Location loc = op.getLoc();
+    Value result = createTensorLoopNest(
+        rewriter, loc, tensorType,
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          Value input =
+              builder.create<tensor::ExtractOp>(nestedLoc, op.getInput(), ivs);
+          if constexpr (std::is_same_v<OpTy, ExpOp>)
+            return builder.create<math::ExpOp>(nestedLoc, input);
+          if constexpr (std::is_same_v<OpTy, CosOp>)
+            return builder.create<math::CosOp>(nestedLoc, input);
+          if constexpr (std::is_same_v<OpTy, SinOp>)
+            return builder.create<math::SinOp>(nestedLoc, input);
+          if constexpr (std::is_same_v<OpTy, TanhOp>)
+            return builder.create<math::TanhOp>(nestedLoc, input);
+          if constexpr (std::is_same_v<OpTy, ReciprocalOp>) {
+            Value one = createFloatLikeOne(builder, nestedLoc, tensorType.getElementType());
+            return builder.create<arith::DivFOp>(nestedLoc, one, input);
+          }
+          if constexpr (std::is_same_v<OpTy, RsqrtOp>) {
+            Value one = createFloatLikeOne(builder, nestedLoc, tensorType.getElementType());
+            Value sqrt = builder.create<math::SqrtOp>(nestedLoc, input);
+            return builder.create<arith::DivFOp>(nestedLoc, one, sqrt);
+          }
+          if constexpr (std::is_same_v<OpTy, SigmoidOp>) {
+            Value zero = createFloatLikeZero(builder, nestedLoc, tensorType.getElementType());
+            Value one = createFloatLikeOne(builder, nestedLoc, tensorType.getElementType());
+            Value neg = builder.create<arith::SubFOp>(nestedLoc, zero, input);
+            Value exp = builder.create<math::ExpOp>(nestedLoc, neg);
+            Value denom = builder.create<arith::AddFOp>(nestedLoc, one, exp);
+            return builder.create<arith::DivFOp>(nestedLoc, one, denom);
+          }
+          if constexpr (std::is_same_v<OpTy, SiluOp>) {
+            Value zero = createFloatLikeZero(builder, nestedLoc, tensorType.getElementType());
+            Value one = createFloatLikeOne(builder, nestedLoc, tensorType.getElementType());
+            Value neg = builder.create<arith::SubFOp>(nestedLoc, zero, input);
+            Value exp = builder.create<math::ExpOp>(nestedLoc, neg);
+            Value denom = builder.create<arith::AddFOp>(nestedLoc, one, exp);
+            Value sigmoid = builder.create<arith::DivFOp>(nestedLoc, one, denom);
+            return builder.create<arith::MulFOp>(nestedLoc, input, sigmoid);
+          }
+          llvm_unreachable("unsupported unary op");
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
+template <typename OpTy>
+struct BinaryElementwiseLowering : public OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(OpTy op,
+                                PatternRewriter &rewriter) const override {
+    auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    Location loc = op.getLoc();
+    Value result = createTensorLoopNest(
+        rewriter, loc, tensorType,
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          Value lhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getLhs(), ivs);
+          Value rhs = builder.create<tensor::ExtractOp>(nestedLoc, op.getRhs(), ivs);
+          bool isFloat = llvm::isa<FloatType>(tensorType.getElementType());
+          if constexpr (std::is_same_v<OpTy, SubOp>) {
+            if (isFloat)
+              return builder.create<arith::SubFOp>(nestedLoc, lhs, rhs).getResult();
+            return builder.create<arith::SubIOp>(nestedLoc, lhs, rhs).getResult();
+          }
+          if constexpr (std::is_same_v<OpTy, MulOp>) {
+            if (isFloat)
+              return builder.create<arith::MulFOp>(nestedLoc, lhs, rhs).getResult();
+            return builder.create<arith::MulIOp>(nestedLoc, lhs, rhs).getResult();
+          }
+          llvm_unreachable("unsupported binary op");
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
 struct ExpLowering : public OpRewritePattern<ExpOp> {
   using OpRewritePattern<ExpOp>::OpRewritePattern;
 
@@ -195,6 +296,83 @@ struct ExpLowering : public OpRewritePattern<ExpOp> {
   }
 };
 
+struct MatmulLowering : public OpRewritePattern<MatmulOp> {
+  using OpRewritePattern<MatmulOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(MatmulOp op,
+                                PatternRewriter &rewriter) const override {
+    auto resultType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    auto lhsType = llvm::cast<RankedTensorType>(op.getLhs().getType());
+    Location loc = op.getLoc();
+    Value result = createTensorLoopNest(
+        rewriter, loc, resultType,
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          Value acc = createFloatLikeZero(builder, nestedLoc, resultType.getElementType());
+          for (int64_t k = 0; k < lhsType.getDimSize(1); ++k) {
+            Value kVal = createIndexConstant(rewriter, nestedLoc, k);
+            Value lhs = builder.create<tensor::ExtractOp>(
+                nestedLoc, op.getLhs(), ValueRange{ivs[0], kVal});
+            Value rhs = builder.create<tensor::ExtractOp>(
+                nestedLoc, op.getRhs(), ValueRange{kVal, ivs[1]});
+            Value prod;
+            if (llvm::isa<FloatType>(resultType.getElementType()))
+              prod = builder.create<arith::MulFOp>(nestedLoc, lhs, rhs).getResult();
+            else
+              prod = builder.create<arith::MulIOp>(nestedLoc, lhs, rhs).getResult();
+            if (llvm::isa<FloatType>(resultType.getElementType()))
+              acc = builder.create<arith::AddFOp>(nestedLoc, acc, prod).getResult();
+            else
+              acc = builder.create<arith::AddIOp>(nestedLoc, acc, prod).getResult();
+          }
+          return acc;
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
+struct MMALowering : public OpRewritePattern<MMAOp> {
+  using OpRewritePattern<MMAOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(MMAOp op,
+                                PatternRewriter &rewriter) const override {
+    auto resultType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    auto lhsType = llvm::cast<RankedTensorType>(op.getLhs().getType());
+    Location loc = op.getLoc();
+    SmallVector<Value> lbs = {createIndexConstant(rewriter, loc, 0),
+                              createIndexConstant(rewriter, loc, 0)};
+    SmallVector<Value> ubs = {createIndexConstant(rewriter, loc, resultType.getDimSize(0)),
+                              createIndexConstant(rewriter, loc, resultType.getDimSize(1))};
+    SmallVector<Value> steps = {createIndexConstant(rewriter, loc, 1),
+                                createIndexConstant(rewriter, loc, 1)};
+
+    Value result = scf::buildLoopNest(
+                       rewriter, loc, lbs, ubs, steps, ValueRange{op.getAcc()},
+                       [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs,
+                           ValueRange iterArgs) -> scf::ValueVector {
+                         Value acc = builder.create<tensor::ExtractOp>(nestedLoc, iterArgs[0], ivs);
+                         for (int64_t k = 0; k < lhsType.getDimSize(1); ++k) {
+                           Value kVal = createIndexConstant(rewriter, nestedLoc, k);
+                           Value lhs = builder.create<tensor::ExtractOp>(
+                               nestedLoc, op.getLhs(), ValueRange{ivs[0], kVal});
+                           Value rhs = builder.create<tensor::ExtractOp>(
+                               nestedLoc, op.getRhs(), ValueRange{kVal, ivs[1]});
+                           Value lhsCast = castInt8ToType(builder, nestedLoc, lhs,
+                                                          resultType.getElementType());
+                           Value rhsCast = castInt8ToType(builder, nestedLoc, rhs,
+                                                          resultType.getElementType());
+                           Value prod = builder.create<arith::MulFOp>(nestedLoc, lhsCast, rhsCast);
+                           acc = builder.create<arith::AddFOp>(nestedLoc, acc, prod);
+                         }
+                         Value next = builder.create<tensor::InsertOp>(nestedLoc, acc, iterArgs[0], ivs);
+                         return {next};
+                       })
+                       .results.front();
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
 class XTLowerToLoopsPass
     : public mlir::xt::impl::XTLowerToLoopsBase<XTLowerToLoopsPass> {
 public:
@@ -203,14 +381,21 @@ public:
   void runOnOperation() override {
     MLIRContext *context = &getContext();
     ConversionTarget target(*context);
-    target.addLegalDialect<arith::ArithDialect, func::FuncDialect, math::MathDialect,
-                           memref::MemRefDialect, scf::SCFDialect,
-                           tensor::TensorDialect>();
+    target.addLegalDialect<arith::ArithDialect, func::FuncDialect, math::MathDialect, memref::MemRefDialect,
+                           scf::SCFDialect, tensor::TensorDialect>();
     target.addIllegalDialect<XTDialect>();
 
     RewritePatternSet patterns(context);
     patterns.add<GetTileBlockIdLowering>(context, blockIdX, blockIdY, blockIdZ);
-    patterns.add<LoadLowering, StoreLowering, AddLowering, ExpLowering>(context);
+    patterns.add<LoadLowering, StoreLowering, AddLowering, BinaryElementwiseLowering<SubOp>,
+                 BinaryElementwiseLowering<MulOp>, ExpLowering,
+                 UnaryElementwiseLowering<CosOp>, UnaryElementwiseLowering<SinOp>,
+                 UnaryElementwiseLowering<ReciprocalOp>,
+                 UnaryElementwiseLowering<RsqrtOp>,
+                 UnaryElementwiseLowering<SigmoidOp>,
+                 UnaryElementwiseLowering<TanhOp>,
+                 UnaryElementwiseLowering<SiluOp>, MatmulLowering,
+                 MMALowering>(context);
 
     if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
       signalPassFailure();

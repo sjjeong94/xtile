@@ -28,6 +28,24 @@ func.func @lower_3d(%arg0: memref<2048x32x32xf32>, %arg1: memref<2048x32x32xf32>
   func.return
 }
 
+func.func @lower_extra_elementwise(%arg0: tensor<16xf32>, %arg1: tensor<16xf32>) -> tensor<16xf32> {
+  %0 = xt.sub(%arg0, %arg1) : tensor<16xf32>
+  %1 = xt.mul(%0, %arg1) : tensor<16xf32>
+  %2 = xt.sigmoid(%1) : tensor<16xf32>
+  %3 = xt.silu(%2) : tensor<16xf32>
+  func.return %3 : tensor<16xf32>
+}
+
+func.func @lower_matmul(%a: tensor<16x32xf32>, %b: tensor<32x8xf32>) -> tensor<16x8xf32> {
+  %0 = xt.matmul(%a, %b) : (tensor<16x32xf32>, tensor<32x8xf32>) -> tensor<16x8xf32>
+  func.return %0 : tensor<16x8xf32>
+}
+
+func.func @lower_mma(%a: tensor<16x32xi8>, %b: tensor<32x8xi8>, %acc: tensor<16x8xf32>) -> tensor<16x8xf32> {
+  %0 = xt.mma(%a, %b, %acc) : (tensor<16x32xi8>, tensor<32x8xi8>, tensor<16x8xf32>) -> tensor<16x8xf32>
+  func.return %0 : tensor<16x8xf32>
+}
+
 // CHECK-LABEL: func.func @lower_1d
 // CHECK-NOT: xt.
 // CHECK: scf.for
@@ -45,3 +63,19 @@ func.func @lower_3d(%arg0: memref<2048x32x32xf32>, %arg1: memref<2048x32x32xf32>
 // CHECK: scf.for
 // CHECK: math.exp
 // CHECK: memref.store
+// CHECK-LABEL: func.func @lower_extra_elementwise
+// CHECK-NOT: xt.
+// CHECK: arith.subf
+// CHECK: arith.mulf
+// CHECK: math.exp
+// CHECK: arith.divf
+// CHECK-LABEL: func.func @lower_matmul
+// CHECK-NOT: xt.
+// CHECK: scf.for
+// CHECK: arith.mulf
+// CHECK: arith.addf
+// CHECK-LABEL: func.func @lower_mma
+// CHECK-NOT: xt.
+// CHECK: arith.sitofp
+// CHECK: arith.mulf
+// CHECK: arith.addf

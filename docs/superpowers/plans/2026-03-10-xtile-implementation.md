@@ -218,3 +218,56 @@ Build loop nests from the tensor rank and lower all elementwise and memory ops t
 
 Run: `cmake --build build --target check-xt`
 Expected: all tests pass for 1D, 2D, and 3D examples.
+
+## Chunk 6: Extended Compute Ops
+
+### Task 8: Add new elementwise and contraction op declarations
+
+**Files:**
+- Modify: `include/xt/XTOps.td`
+- Modify: `lib/xt/XTOps.cpp`
+- Modify: `test/xt/parse.mlir`
+- Modify: `test/xt/invalid.mlir`
+
+- [ ] **Step 1: Write the failing tests**
+
+Add parse and invalid coverage for `sub`, `mul`, `matmul`, `mma`, `cos`, `sin`, `reciprocal`, `rsqrt`, `sigmoid`, `tanh`, and `silu`.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `build/bin/xt-opt test/xt/parse.mlir`
+Expected: FAIL because the new ops do not exist yet.
+
+- [ ] **Step 3: Implement op declarations and verifiers**
+
+Define the new ops and enforce the requested `mma` type restrictions plus `matmul`/`mma` shape rules.
+
+- [ ] **Step 4: Run focused verification**
+
+Run: `build/bin/xt-opt test/xt/parse.mlir && not build/bin/xt-opt test/xt/invalid.mlir`
+Expected: new valid parse cases succeed and invalid cases fail with the intended diagnostics.
+
+### Task 9: Lower new ops and verify the full pipeline
+
+**Files:**
+- Modify: `lib/xt/XTLowerToLoops.cpp`
+- Modify: `test/xt/lower.mlir`
+- Modify: `test/xt/canonicalize.mlir`
+
+- [ ] **Step 1: Write the failing lowering tests**
+
+Add representative lowering coverage for unary ops, binary ops, `matmul`, and `mma`.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `build/bin/xt-opt --xt-lower-to-loops test/xt/lower.mlir`
+Expected: FAIL or produce incorrect IR because the new lowering patterns do not exist yet.
+
+- [ ] **Step 3: Implement minimal lowering**
+
+Lower the new elementwise ops through rank-generic loops and lower `matmul`/`mma` through rank-2 reduction loops with the requested `mma` type conversions.
+
+- [ ] **Step 4: Run full verification**
+
+Run: `cmake --build build --target check-xt`
+Expected: all tests pass with the extended operation set.

@@ -31,3 +31,24 @@ func.func @bad_3d_shape(%arg0: memref<2048x32x32xf32>) {
 }
 
 // ERR: tile attribute must match tensor shape
+
+func.func @bad_matmul_shape(%a: tensor<16x32xf32>, %b: tensor<16x8xf32>) {
+  %0 = xt.matmul(%a, %b) : (tensor<16x32xf32>, tensor<16x8xf32>) -> tensor<16x8xf32>
+  func.return
+}
+
+// ERR: matmul requires lhs inner dimension to match rhs outer dimension
+
+func.func @bad_mma_input_type(%a: tensor<16x32xf32>, %b: tensor<32x8xi8>, %acc: tensor<16x8xf32>) {
+  %0 = xt.mma(%a, %b, %acc) : (tensor<16x32xf32>, tensor<32x8xi8>, tensor<16x8xf32>) -> tensor<16x8xf32>
+  func.return
+}
+
+// ERR: mma requires i8 input tensors
+
+func.func @bad_mma_acc_type(%a: tensor<16x32xi8>, %b: tensor<32x8xi8>, %acc: tensor<16x8xi32>) {
+  %0 = xt.mma(%a, %b, %acc) : (tensor<16x32xi8>, tensor<32x8xi8>, tensor<16x8xi32>) -> tensor<16x8xi32>
+  func.return
+}
+
+// ERR: mma requires f32 or bf16 accumulator and result tensors

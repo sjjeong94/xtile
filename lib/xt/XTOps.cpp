@@ -54,6 +54,26 @@ static ParseResult parseSingleTypeResultOp(OpAsmParser &parser,
   return success();
 }
 
+static ParseResult parseFunctionalTypeOp(
+    OpAsmParser &parser, OperationState &result,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands, int32_t operandCount) {
+  SmallVector<Type> operandTypes;
+  Type resultType;
+  if (parser.parseLParen() || parser.parseOperandList(operands, operandCount) ||
+      parser.parseRParen() || parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColon() || parser.parseLParen() || parser.parseTypeList(operandTypes) ||
+      parser.parseRParen() || parser.parseArrow() || parser.parseType(resultType))
+    return failure();
+  if (static_cast<int32_t>(operandTypes.size()) != operandCount)
+    return parser.emitError(parser.getNameLoc(),
+                            "operand count must match functional type");
+  if (parser.resolveOperands(operands, operandTypes, parser.getNameLoc(),
+                             result.operands))
+    return failure();
+  result.addTypes(resultType);
+  return success();
+}
+
 static ParseResult parseTileAttr(OpAsmParser &parser,
                                  OperationState &result) {
   Builder &builder = parser.getBuilder();
@@ -168,12 +188,107 @@ ParseResult AddOp::parse(OpAsmParser &parser, OperationState &result) {
 
 void AddOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
 
+ParseResult SubOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 2);
+}
+
+void SubOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+
+ParseResult MulOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 2);
+}
+
+void MulOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+
 ParseResult ExpOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand> operands;
   return parseSingleTypeResultOp(parser, result, operands, 1);
 }
 
 void ExpOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+
+ParseResult CosOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 1);
+}
+
+void CosOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+
+ParseResult SinOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 1);
+}
+
+void SinOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+
+ParseResult ReciprocalOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 1);
+}
+
+void ReciprocalOp::print(OpAsmPrinter &printer) {
+  printSingleTypeResultOp(printer, *this);
+}
+
+ParseResult RsqrtOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 1);
+}
+
+void RsqrtOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+
+ParseResult SigmoidOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 1);
+}
+
+void SigmoidOp::print(OpAsmPrinter &printer) {
+  printSingleTypeResultOp(printer, *this);
+}
+
+ParseResult TanhOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 1);
+}
+
+void TanhOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+
+ParseResult SiluOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseSingleTypeResultOp(parser, result, operands, 1);
+}
+
+void SiluOp::print(OpAsmPrinter &printer) { printSingleTypeResultOp(printer, *this); }
+
+ParseResult MatmulOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseFunctionalTypeOp(parser, result, operands, 2);
+}
+
+void MatmulOp::print(OpAsmPrinter &printer) {
+  printer << "(";
+  printer.printOperands(getOperands());
+  printer << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getLhs().getType() << ", " << getRhs().getType() << ") -> "
+          << getResult().getType();
+}
+
+ParseResult MMAOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseFunctionalTypeOp(parser, result, operands, 3);
+}
+
+void MMAOp::print(OpAsmPrinter &printer) {
+  printer << "(";
+  printer.printOperands(getOperands());
+  printer << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getLhs().getType() << ", " << getRhs().getType() << ", "
+          << getAcc().getType() << ") -> " << getResult().getType();
+}
 
 LogicalResult LoadOp::verify() {
   auto tensorType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
@@ -203,28 +318,104 @@ LogicalResult StoreOp::verify() {
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
 }
 
-LogicalResult AddOp::verify() {
-  auto lhsType = llvm::dyn_cast<RankedTensorType>(getLhs().getType());
-  auto rhsType = llvm::dyn_cast<RankedTensorType>(getRhs().getType());
-  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+static LogicalResult verifySameTensorTypes(Operation *op, Value lhs, Value rhs,
+                                           Value result) {
+  auto lhsType = llvm::dyn_cast<RankedTensorType>(lhs.getType());
+  auto rhsType = llvm::dyn_cast<RankedTensorType>(rhs.getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(result.getType());
   if (!lhsType || !rhsType || !resultType)
-    return emitOpError("requires ranked tensor operands and result");
+    return op->emitOpError("requires ranked tensor operands and result");
   if (lhsType != rhsType || lhsType != resultType)
-    return emitOpError("requires operand and result tensor types to match");
+    return op->emitOpError("requires operand and result tensor types to match");
   if (!lhsType.hasStaticShape())
-    return emitOpError("requires statically shaped tensors");
+    return op->emitOpError("requires statically shaped tensors");
   return success();
 }
 
-LogicalResult ExpOp::verify() {
-  auto inputType = llvm::dyn_cast<RankedTensorType>(getInput().getType());
-  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+static LogicalResult verifySameUnaryTensorTypes(Operation *op, Value input,
+                                                Value result) {
+  auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(result.getType());
   if (!inputType || !resultType)
-    return emitOpError("requires ranked tensor operand and result");
+    return op->emitOpError("requires ranked tensor operand and result");
   if (inputType != resultType)
-    return emitOpError("requires operand and result tensor types to match");
+    return op->emitOpError("requires operand and result tensor types to match");
   if (!inputType.hasStaticShape())
-    return emitOpError("requires statically shaped tensors");
+    return op->emitOpError("requires statically shaped tensors");
+  return success();
+}
+
+LogicalResult AddOp::verify() {
+  return verifySameTensorTypes(*this, getLhs(), getRhs(), getResult());
+}
+
+LogicalResult SubOp::verify() {
+  return verifySameTensorTypes(*this, getLhs(), getRhs(), getResult());
+}
+
+LogicalResult MulOp::verify() {
+  return verifySameTensorTypes(*this, getLhs(), getRhs(), getResult());
+}
+
+LogicalResult ExpOp::verify() {
+  return verifySameUnaryTensorTypes(*this, getInput(), getResult());
+}
+
+LogicalResult CosOp::verify() { return verifySameUnaryTensorTypes(*this, getInput(), getResult()); }
+LogicalResult SinOp::verify() { return verifySameUnaryTensorTypes(*this, getInput(), getResult()); }
+LogicalResult ReciprocalOp::verify() { return verifySameUnaryTensorTypes(*this, getInput(), getResult()); }
+LogicalResult RsqrtOp::verify() { return verifySameUnaryTensorTypes(*this, getInput(), getResult()); }
+LogicalResult SigmoidOp::verify() { return verifySameUnaryTensorTypes(*this, getInput(), getResult()); }
+LogicalResult TanhOp::verify() { return verifySameUnaryTensorTypes(*this, getInput(), getResult()); }
+LogicalResult SiluOp::verify() { return verifySameUnaryTensorTypes(*this, getInput(), getResult()); }
+
+static LogicalResult verifyMatmulLikeShape(Operation *op, RankedTensorType lhsType,
+                                           RankedTensorType rhsType,
+                                           RankedTensorType resultType) {
+  if (!lhsType || !rhsType || !resultType)
+    return op->emitOpError("requires ranked tensor operands and result");
+  if (!lhsType.hasStaticShape() || !rhsType.hasStaticShape() ||
+      !resultType.hasStaticShape())
+    return op->emitOpError("requires statically shaped tensors");
+  if (lhsType.getRank() != 2 || rhsType.getRank() != 2 || resultType.getRank() != 2)
+    return op->emitOpError("requires rank-2 tensors");
+  if (lhsType.getDimSize(1) != rhsType.getDimSize(0))
+    return op->emitOpError(
+        "matmul requires lhs inner dimension to match rhs outer dimension");
+  if (resultType.getDimSize(0) != lhsType.getDimSize(0) ||
+      resultType.getDimSize(1) != rhsType.getDimSize(1))
+    return op->emitOpError("result shape must match matmul output shape");
+  return success();
+}
+
+LogicalResult MatmulOp::verify() {
+  auto lhsType = llvm::dyn_cast<RankedTensorType>(getLhs().getType());
+  auto rhsType = llvm::dyn_cast<RankedTensorType>(getRhs().getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+  if (failed(verifyMatmulLikeShape(*this, lhsType, rhsType, resultType)))
+    return failure();
+  if (lhsType.getElementType() != rhsType.getElementType() ||
+      lhsType.getElementType() != resultType.getElementType())
+    return emitOpError("requires matching element types");
+  return success();
+}
+
+LogicalResult MMAOp::verify() {
+  auto lhsType = llvm::dyn_cast<RankedTensorType>(getLhs().getType());
+  auto rhsType = llvm::dyn_cast<RankedTensorType>(getRhs().getType());
+  auto accType = llvm::dyn_cast<RankedTensorType>(getAcc().getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+  if (failed(verifyMatmulLikeShape(*this, lhsType, rhsType, resultType)))
+    return failure();
+  if (!accType || !accType.hasStaticShape() || accType.getRank() != 2)
+    return emitOpError("requires a rank-2 statically shaped accumulator");
+  if (accType != resultType)
+    return emitOpError("accumulator and result tensor types must match");
+  if (!lhsType.getElementType().isInteger(8) || !rhsType.getElementType().isInteger(8))
+    return emitOpError("mma requires i8 input tensors");
+  Type accElem = accType.getElementType();
+  if (!accElem.isF32() && !accElem.isBF16())
+    return emitOpError("mma requires f32 or bf16 accumulator and result tensors");
   return success();
 }
 
@@ -260,9 +451,26 @@ struct FoldAddZeroPattern : public OpRewritePattern<AddOp> {
     return failure();
   }
 };
+
+struct FoldSubZeroPattern : public OpRewritePattern<SubOp> {
+  using OpRewritePattern<SubOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SubOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!isZeroTensor(op.getRhs()))
+      return failure();
+    rewriter.replaceOp(op, op.getLhs());
+    return success();
+  }
+};
 } // namespace
 
 void AddOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                         MLIRContext *context) {
   results.add<FoldAddZeroPattern>(context);
+}
+
+void SubOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                        MLIRContext *context) {
+  results.add<FoldSubZeroPattern>(context);
 }
