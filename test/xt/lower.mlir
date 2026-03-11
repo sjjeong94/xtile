@@ -105,6 +105,18 @@ func.func @lower_depthwise_conv2d(%arg0: memref<8x32x64x256xi8>, %arg1: memref<3
   func.return
 }
 
+func.func @lower_reduce_ops(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+  %0 = xt.load(%arg0, %bid_x, %zero) : memref<2048x16xf32> -> tensor<16x16xf32>
+  %1 = xt.reduce_sum(%0) : (tensor<16x16xf32>) -> tensor<16x1xf32>
+  %2 = xt.reduce_max(%0) : (tensor<16x16xf32>) -> tensor<16x1xf32>
+  %3 = xt.sub(%0, %1) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
+  %4 = xt.sub(%3, %2) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
+  xt.store(%4, %arg1, %bid_x, %zero) : tensor<16x16xf32> -> memref<2048x16xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @lower_1d
 // CHECK-NOT: xt.
 // CHECK: scf.for
@@ -179,4 +191,11 @@ func.func @lower_depthwise_conv2d(%arg0: memref<8x32x64x256xi8>, %arg1: memref<3
 // CHECK: arith.sitofp
 // CHECK: arith.mulf
 // CHECK: arith.addf
+// CHECK: memref.store
+// CHECK-LABEL: func.func @lower_reduce_ops
+// CHECK-NOT: xt.
+// CHECK: scf.for
+// CHECK: arith.addf
+// CHECK: arith.maximumf
+// CHECK: tensor.insert
 // CHECK: memref.store

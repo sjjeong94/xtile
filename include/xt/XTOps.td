@@ -127,4 +127,20 @@ def XT_DepthwiseConv2DOp : XT_Op<"depthwise_conv2d", [Pure]> {
   let hasVerifier = 1;
 }
 
+def XT_ReduceSumOp : XT_Op<"reduce_sum", [Pure]> {
+  let summary = "reduce the last dimension by sum";
+  let arguments = (ins XT_RankedTensor:$input);
+  let results = (outs XT_RankedTensor:$result);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def XT_ReduceMaxOp : XT_Op<"reduce_max", [Pure]> {
+  let summary = "reduce the last dimension by max";
+  let arguments = (ins XT_RankedTensor:$input);
+  let results = (outs XT_RankedTensor:$result);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
 #endif // XT_OPS

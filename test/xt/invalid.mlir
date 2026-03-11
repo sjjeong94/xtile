@@ -72,3 +72,10 @@ func.func @bad_depthwise_filter_shape(%arg0: tensor<1x32x64x64xi8>, %arg1: tenso
 }
 
 // ERR: depthwise_conv2d requires filter input-channel dimension to be 1
+
+func.func @bad_reduce_shape(%arg0: tensor<16x16xf32>) -> tensor<8x1xf32> {
+  %0 = xt.reduce_sum(%arg0) : (tensor<16x16xf32>) -> tensor<8x1xf32>
+  func.return %0 : tensor<8x1xf32>
+}
+
+// ERR: reduce result shape must match input shape except for the last dimension, which must be 1

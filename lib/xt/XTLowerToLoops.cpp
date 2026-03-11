@@ -573,6 +573,50 @@ struct DepthwiseConv2DLowering : public OpRewritePattern<DepthwiseConv2DOp> {
   }
 };
 
+template <typename OpTy>
+struct ReduceLastDimLowering : public OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(OpTy op,
+                                PatternRewriter &rewriter) const override {
+    auto inputType = llvm::cast<RankedTensorType>(op.getInput().getType());
+    auto resultType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    Type elemType = resultType.getElementType();
+    bool isFloat = llvm::isa<FloatType>(elemType);
+    Location loc = op.getLoc();
+
+    Value result = createTensorLoopNest(
+        rewriter, loc, resultType,
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          SmallVector<Value> indices(ivs.begin(), ivs.end());
+          indices.back() = createIndexConstant(builder, nestedLoc, 0);
+          Value acc = builder.create<tensor::ExtractOp>(nestedLoc, op.getInput(), indices);
+
+          for (int64_t k = 1; k < inputType.getDimSize(inputType.getRank() - 1); ++k) {
+            indices.back() = createIndexConstant(builder, nestedLoc, k);
+            Value value =
+                builder.create<tensor::ExtractOp>(nestedLoc, op.getInput(), indices);
+            if constexpr (std::is_same_v<OpTy, ReduceSumOp>) {
+              if (isFloat)
+                acc = builder.create<arith::AddFOp>(nestedLoc, acc, value);
+              else
+                acc = builder.create<arith::AddIOp>(nestedLoc, acc, value);
+            } else if constexpr (std::is_same_v<OpTy, ReduceMaxOp>) {
+              if (isFloat)
+                acc = builder.create<arith::MaximumFOp>(nestedLoc, acc, value);
+              else
+                acc = builder.create<arith::MaxSIOp>(nestedLoc, acc, value);
+            } else {
+              llvm_unreachable("unsupported reduce op");
+            }
+          }
+          return acc;
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
 class XTLowerToLoopsPass
     : public mlir::xt::impl::XTLowerToLoopsBase<XTLowerToLoopsPass> {
 public:
@@ -597,6 +641,8 @@ public:
                  UnaryElementwiseLowering<TanhOp>,
                  UnaryElementwiseLowering<SiluOp>, MatmulLowering,
                  Conv2DLowering, DepthwiseConv2DLowering,
+                 ReduceLastDimLowering<ReduceSumOp>,
+                 ReduceLastDimLowering<ReduceMaxOp>,
                  MMALowering>(context);
 
     if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))

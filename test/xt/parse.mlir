@@ -121,6 +121,19 @@ func.func @depthwise_conv2d(%arg0: memref<8x32x64x256xi8>, %arg1: memref<3x3x1x2
   func.return
 }
 
+func.func @reduce_ops(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero) : memref<2048x16xf32> -> tensor<16x16xf32>
+  %1 = xt.reduce_sum(%0) : (tensor<16x16xf32>) -> tensor<16x1xf32>
+  %2 = xt.reduce_max(%0) : (tensor<16x16xf32>) -> tensor<16x1xf32>
+  %3 = xt.sub(%0, %1) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
+  %4 = xt.sub(%3, %2) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
+  xt.store(%4, %arg1, %bid_x, %zero) : tensor<16x16xf32> -> memref<2048x16xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @exp_1d
 // CHECK: %[[BIDX1:.*]], %[[BIDY1:.*]], %[[BIDZ1:.*]] = xt.get_tile_block_id() : i32
 // CHECK: %[[LOAD1:.*]] = xt.load(%arg0, %[[BIDX1]]) : memref<2048xf32> -> tensor<16xf32>
@@ -183,3 +196,11 @@ func.func @depthwise_conv2d(%arg0: memref<8x32x64x256xi8>, %arg1: memref<3x3x1x2
 // CHECK: %[[LOADD1:.*]] = xt.load(%arg1, %[[ZERODW]], %[[ZERODW]], %[[ZERODW]], %[[BIDYD]]) {shared = 1} : memref<3x3x1x256xi8> -> tensor<3x3x1x64xi8>
 // CHECK: %[[DWCONV:.*]] = xt.depthwise_conv2d(%[[LOADD0]], %[[LOADD1]]) {pad = [1, 1, 1, 1], stride = [1, 1], dilation = [1, 1]} : (tensor<1x32x64x64xi8>, tensor<3x3x1x64xi8>) -> tensor<1x32x64x64xf32>
 // CHECK: xt.store(%[[DWCONV]], %arg2, %[[BIDXD]], %[[ZERODW]], %[[ZERODW]], %[[BIDYD]]) : tensor<1x32x64x64xf32> -> memref<8x32x64x256xf32>
+// CHECK-LABEL: func.func @reduce_ops
+// CHECK: %[[BIDXR:.*]], %[[BIDYR:.*]], %[[BIDZR:.*]] = xt.get_tile_block_id() : i32
+// CHECK: %[[LOADR:.*]] = xt.load(%arg0, %[[BIDXR]], %[[ZEROR:.*]]) : memref<2048x16xf32> -> tensor<16x16xf32>
+// CHECK: %[[SUM:.*]] = xt.reduce_sum(%[[LOADR]]) : (tensor<16x16xf32>) -> tensor<16x1xf32>
+// CHECK: %[[MAX:.*]] = xt.reduce_max(%[[LOADR]]) : (tensor<16x16xf32>) -> tensor<16x1xf32>
+// CHECK: %[[SUB0:.*]] = xt.sub(%[[LOADR]], %[[SUM]]) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
+// CHECK: %[[SUB1:.*]] = xt.sub(%[[SUB0]], %[[MAX]]) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
+// CHECK: xt.store(%[[SUB1]], %arg1, %[[BIDXR]], %[[ZEROR]]) : tensor<16x16xf32> -> memref<2048x16xf32>

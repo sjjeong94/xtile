@@ -391,6 +391,28 @@ void DepthwiseConv2DOp::print(OpAsmPrinter &printer) {
           << ") -> " << getResult().getType();
 }
 
+ParseResult ReduceSumOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseFunctionalTypeOp(parser, result, operands, 1);
+}
+
+void ReduceSumOp::print(OpAsmPrinter &printer) {
+  printer << "(" << getInput() << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getInput().getType() << ") -> " << getResult().getType();
+}
+
+ParseResult ReduceMaxOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseFunctionalTypeOp(parser, result, operands, 1);
+}
+
+void ReduceMaxOp::print(OpAsmPrinter &printer) {
+  printer << "(" << getInput() << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getInput().getType() << ") -> " << getResult().getType();
+}
+
 LogicalResult LoadOp::verify() {
   auto tensorType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
   auto memRefType = llvm::dyn_cast<MemRefType>(getSource().getType());
@@ -675,6 +697,39 @@ LogicalResult DepthwiseConv2DOp::verify() {
   if (*outH != resultType.getDimSize(1) || *outW != resultType.getDimSize(2))
     return emitOpError("depthwise_conv2d result spatial dimensions do not match pad/stride/dilation");
   return success();
+}
+
+static LogicalResult verifyLastDimReductionShape(Operation *op, Value input,
+                                                 Value result) {
+  auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(result.getType());
+  if (!inputType || !resultType)
+    return op->emitOpError("requires ranked tensor operand and result");
+  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
+    return op->emitOpError("requires statically shaped tensors");
+  if (inputType.getElementType() != resultType.getElementType())
+    return op->emitOpError("requires operand and result element types to match");
+  if (inputType.getRank() != resultType.getRank())
+    return op->emitOpError("requires operand and result ranks to match");
+  if (inputType.getRank() < 1)
+    return op->emitOpError("requires rank-1 or higher tensors");
+  for (int64_t i = 0, e = inputType.getRank() - 1; i < e; ++i) {
+    if (inputType.getDimSize(i) != resultType.getDimSize(i))
+      return op->emitOpError(
+          "reduce result shape must match input shape except for the last dimension, which must be 1");
+  }
+  if (resultType.getDimSize(inputType.getRank() - 1) != 1)
+    return op->emitOpError(
+        "reduce result shape must match input shape except for the last dimension, which must be 1");
+  return success();
+}
+
+LogicalResult ReduceSumOp::verify() {
+  return verifyLastDimReductionShape(*this, getInput(), getResult());
+}
+
+LogicalResult ReduceMaxOp::verify() {
+  return verifyLastDimReductionShape(*this, getInput(), getResult());
 }
 
 static bool isZeroTensor(Value value) {
