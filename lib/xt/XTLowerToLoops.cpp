@@ -481,6 +481,98 @@ struct Conv2DLowering : public OpRewritePattern<Conv2DOp> {
   }
 };
 
+struct DepthwiseConv2DLowering : public OpRewritePattern<DepthwiseConv2DOp> {
+  using OpRewritePattern<DepthwiseConv2DOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(DepthwiseConv2DOp op,
+                                PatternRewriter &rewriter) const override {
+    auto resultType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    auto inputType = llvm::cast<RankedTensorType>(op.getInput().getType());
+    auto filterType = llvm::cast<RankedTensorType>(op.getFilter().getType());
+    auto pad = op.getPadAttr().asArrayRef();
+    auto stride = op.getStrideAttr().asArrayRef();
+    auto dilation = op.getDilationAttr().asArrayRef();
+    Type elemType = resultType.getElementType();
+    Location loc = op.getLoc();
+
+    Value result = createTensorLoopNest(
+        rewriter, loc, resultType,
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          Value n = ivs[0];
+          Value oh = ivs[1];
+          Value ow = ivs[2];
+          Value c = ivs[3];
+          Value acc = createZeroValue(builder, nestedLoc, elemType);
+          Value zero = createIndexConstant(builder, nestedLoc, 0);
+          Value inputHBound =
+              createIndexConstant(builder, nestedLoc, inputType.getDimSize(1));
+          Value inputWBound =
+              createIndexConstant(builder, nestedLoc, inputType.getDimSize(2));
+          Value padTop = createIndexConstant(builder, nestedLoc, pad[0]);
+          Value padLeft = createIndexConstant(builder, nestedLoc, pad[1]);
+          Value strideH = createIndexConstant(builder, nestedLoc, stride[0]);
+          Value strideW = createIndexConstant(builder, nestedLoc, stride[1]);
+
+          for (int64_t kh = 0; kh < filterType.getDimSize(0); ++kh) {
+            Value khVal = createIndexConstant(builder, nestedLoc, kh);
+            Value dilatedKh =
+                createIndexConstant(builder, nestedLoc, kh * dilation[0]);
+            Value baseH = builder.create<arith::MulIOp>(nestedLoc, oh, strideH);
+            Value inputH = builder.create<arith::SubIOp>(
+                nestedLoc,
+                builder.create<arith::AddIOp>(nestedLoc, baseH, dilatedKh), padTop);
+
+            for (int64_t kw = 0; kw < filterType.getDimSize(1); ++kw) {
+              Value kwVal = createIndexConstant(builder, nestedLoc, kw);
+              Value dilatedKw =
+                  createIndexConstant(builder, nestedLoc, kw * dilation[1]);
+              Value baseW = builder.create<arith::MulIOp>(nestedLoc, ow, strideW);
+              Value inputW = builder.create<arith::SubIOp>(
+                  nestedLoc,
+                  builder.create<arith::AddIOp>(nestedLoc, baseW, dilatedKw),
+                  padLeft);
+
+              Value inHLower = builder.create<arith::CmpIOp>(
+                  nestedLoc, arith::CmpIPredicate::sge, inputH, zero);
+              Value inHUpper = builder.create<arith::CmpIOp>(
+                  nestedLoc, arith::CmpIPredicate::slt, inputH, inputHBound);
+              Value inWLower = builder.create<arith::CmpIOp>(
+                  nestedLoc, arith::CmpIPredicate::sge, inputW, zero);
+              Value inWUpper = builder.create<arith::CmpIOp>(
+                  nestedLoc, arith::CmpIPredicate::slt, inputW, inputWBound);
+              Value inBounds = createBooleanAnd(
+                  builder, nestedLoc,
+                  createBooleanAnd(builder, nestedLoc, inHLower, inHUpper),
+                  createBooleanAnd(builder, nestedLoc, inWLower, inWUpper));
+
+              auto ifOp = scf::IfOp::create(builder, nestedLoc, TypeRange{elemType},
+                                            inBounds, /*withElseRegion=*/true);
+              {
+                OpBuilder::InsertionGuard guard(builder);
+                builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                Value input = builder.create<tensor::ExtractOp>(
+                    nestedLoc, op.getInput(), ValueRange{n, inputH, inputW, c});
+                Value filter = builder.create<tensor::ExtractOp>(
+                    nestedLoc, op.getFilter(),
+                    ValueRange{khVal, kwVal, zero, c});
+                Value lhs = castInt8ToType(builder, nestedLoc, input, elemType);
+                Value rhs = castInt8ToType(builder, nestedLoc, filter, elemType);
+                Value prod = builder.create<arith::MulFOp>(nestedLoc, lhs, rhs);
+                Value nextAcc = builder.create<arith::AddFOp>(nestedLoc, acc, prod);
+                builder.create<scf::YieldOp>(nestedLoc, nextAcc);
+                builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+                builder.create<scf::YieldOp>(nestedLoc, acc);
+              }
+              acc = ifOp.getResult(0);
+            }
+          }
+          return acc;
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
 class XTLowerToLoopsPass
     : public mlir::xt::impl::XTLowerToLoopsBase<XTLowerToLoopsPass> {
 public:
@@ -504,7 +596,7 @@ public:
                  UnaryElementwiseLowering<SigmoidOp>,
                  UnaryElementwiseLowering<TanhOp>,
                  UnaryElementwiseLowering<SiluOp>, MatmulLowering,
-                 Conv2DLowering,
+                 Conv2DLowering, DepthwiseConv2DLowering,
                  MMALowering>(context);
 
     if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))

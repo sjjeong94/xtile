@@ -65,3 +65,10 @@ func.func @bad_conv2d_shape(%arg0: tensor<1x32x64x128xi8>, %arg1: tensor<3x3x64x
 }
 
 // ERR: conv2d requires input and filter channel dimensions to match
+
+func.func @bad_depthwise_filter_shape(%arg0: tensor<1x32x64x64xi8>, %arg1: tensor<3x3x2x64xi8>) -> tensor<1x32x64x64xf32> {
+  %0 = xt.depthwise_conv2d(%arg0, %arg1) {pad = [1, 1, 1, 1], stride = [1, 1], dilation = [1, 1]} : (tensor<1x32x64x64xi8>, tensor<3x3x2x64xi8>) -> tensor<1x32x64x64xf32>
+  func.return %0 : tensor<1x32x64x64xf32>
+}
+
+// ERR: depthwise_conv2d requires filter input-channel dimension to be 1

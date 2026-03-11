@@ -95,6 +95,16 @@ func.func @lower_conv2d(%arg0: memref<8x32x64x128xi8>, %arg1: memref<3x3x128x256
   func.return
 }
 
+func.func @lower_depthwise_conv2d(%arg0: memref<8x32x64x256xi8>, %arg1: memref<3x3x1x256xi8>, %arg2: memref<8x32x64x256xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+  %0 = xt.load(%arg0, %bid_x, %zero, %zero, %bid_y) : memref<8x32x64x256xi8> -> tensor<1x32x64x64xi8>
+  %1 = xt.load(%arg1, %zero, %zero, %zero, %bid_y) {shared = 1} : memref<3x3x1x256xi8> -> tensor<3x3x1x64xi8>
+  %2 = xt.depthwise_conv2d(%0, %1) {pad = [1, 1, 1, 1], stride = [1, 1], dilation = [1, 1]} : (tensor<1x32x64x64xi8>, tensor<3x3x1x64xi8>) -> tensor<1x32x64x64xf32>
+  xt.store(%2, %arg2, %bid_x, %zero, %zero, %bid_y) : tensor<1x32x64x64xf32> -> memref<8x32x64x256xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @lower_1d
 // CHECK-NOT: xt.
 // CHECK: scf.for
@@ -153,6 +163,15 @@ func.func @lower_conv2d(%arg0: memref<8x32x64x128xi8>, %arg1: memref<3x3x128x256
 // CHECK: arith.addf %[[LHS]], %[[RHS]] : f32
 // CHECK: memref.store
 // CHECK-LABEL: func.func @lower_conv2d
+// CHECK-NOT: xt.
+// CHECK: scf.for
+// CHECK: arith.cmpi
+// CHECK: scf.if
+// CHECK: arith.sitofp
+// CHECK: arith.mulf
+// CHECK: arith.addf
+// CHECK: memref.store
+// CHECK-LABEL: func.func @lower_depthwise_conv2d
 // CHECK-NOT: xt.
 // CHECK: scf.for
 // CHECK: arith.cmpi

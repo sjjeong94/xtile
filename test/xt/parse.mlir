@@ -110,6 +110,17 @@ func.func @conv2d(%arg0: memref<8x32x64x128xi8>, %arg1: memref<3x3x128x256xi8>, 
   func.return
 }
 
+func.func @depthwise_conv2d(%arg0: memref<8x32x64x256xi8>, %arg1: memref<3x3x1x256xi8>, %arg2: memref<8x32x64x256xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero, %zero, %bid_y) : memref<8x32x64x256xi8> -> tensor<1x32x64x64xi8>
+  %1 = xt.load(%arg1, %zero, %zero, %zero, %bid_y) {shared = 1} : memref<3x3x1x256xi8> -> tensor<3x3x1x64xi8>
+  %2 = xt.depthwise_conv2d(%0, %1) {pad = [1, 1, 1, 1], stride = [1, 1], dilation = [1, 1]} : (tensor<1x32x64x64xi8>, tensor<3x3x1x64xi8>) -> tensor<1x32x64x64xf32>
+  xt.store(%2, %arg2, %bid_x, %zero, %zero, %bid_y) : tensor<1x32x64x64xf32> -> memref<8x32x64x256xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @exp_1d
 // CHECK: %[[BIDX1:.*]], %[[BIDY1:.*]], %[[BIDZ1:.*]] = xt.get_tile_block_id() : i32
 // CHECK: %[[LOAD1:.*]] = xt.load(%arg0, %[[BIDX1]]) : memref<2048xf32> -> tensor<16xf32>
@@ -166,3 +177,9 @@ func.func @conv2d(%arg0: memref<8x32x64x128xi8>, %arg1: memref<3x3x128x256xi8>, 
 // CHECK: %[[LOADC1:.*]] = xt.load(%arg1, %[[ZEROC]], %[[ZEROC]], %[[ZEROC]], %[[BIDYC]]) {shared = 1} : memref<3x3x128x256xi8> -> tensor<3x3x128x64xi8>
 // CHECK: %[[CONV:.*]] = xt.conv2d(%[[LOADC0]], %[[LOADC1]]) {pad = [1, 1, 1, 1], stride = [1, 1], dilation = [1, 1]} : (tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8>) -> tensor<1x32x64x64xf32>
 // CHECK: xt.store(%[[CONV]], %arg2, %[[BIDXC]], %[[ZEROC]], %[[ZEROC]], %[[BIDYC]]) : tensor<1x32x64x64xf32> -> memref<8x32x64x256xf32>
+// CHECK-LABEL: func.func @depthwise_conv2d
+// CHECK: %[[BIDXD:.*]], %[[BIDYD:.*]], %[[BIDZD:.*]] = xt.get_tile_block_id() : i32
+// CHECK: %[[LOADD0:.*]] = xt.load(%arg0, %[[BIDXD]], %[[ZERODW:.*]], %[[ZERODW]], %[[BIDYD]]) : memref<8x32x64x256xi8> -> tensor<1x32x64x64xi8>
+// CHECK: %[[LOADD1:.*]] = xt.load(%arg1, %[[ZERODW]], %[[ZERODW]], %[[ZERODW]], %[[BIDYD]]) {shared = 1} : memref<3x3x1x256xi8> -> tensor<3x3x1x64xi8>
+// CHECK: %[[DWCONV:.*]] = xt.depthwise_conv2d(%[[LOADD0]], %[[LOADD1]]) {pad = [1, 1, 1, 1], stride = [1, 1], dilation = [1, 1]} : (tensor<1x32x64x64xi8>, tensor<3x3x1x64xi8>) -> tensor<1x32x64x64xf32>
+// CHECK: xt.store(%[[DWCONV]], %arg2, %[[BIDXD]], %[[ZERODW]], %[[ZERODW]], %[[BIDYD]]) : tensor<1x32x64x64xf32> -> memref<8x32x64x256xf32>

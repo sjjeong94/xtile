@@ -362,6 +362,35 @@ void Conv2DOp::print(OpAsmPrinter &printer) {
           << ") -> " << getResult().getType();
 }
 
+ParseResult DepthwiseConv2DOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  SmallVector<Type> operandTypes;
+  Type resultType;
+  if (parser.parseLParen() || parser.parseOperandList(operands, 2) ||
+      parser.parseRParen() || parseConv2DAttrs(parser, result) ||
+      parser.parseColon() || parser.parseLParen() ||
+      parser.parseTypeList(operandTypes) || parser.parseRParen() ||
+      parser.parseArrow() || parser.parseType(resultType))
+    return failure();
+  if (operandTypes.size() != 2)
+    return parser.emitError(parser.getNameLoc(),
+                            "depthwise_conv2d expects exactly two operand types");
+  if (parser.resolveOperands(operands, operandTypes, parser.getNameLoc(),
+                             result.operands))
+    return failure();
+  result.addTypes(resultType);
+  return success();
+}
+
+void DepthwiseConv2DOp::print(OpAsmPrinter &printer) {
+  printer << "(";
+  printer.printOperands(getOperands());
+  printer << ")";
+  printConv2DAttrs(printer, getPadAttr(), getStrideAttr(), getDilationAttr());
+  printer << " : (" << getInput().getType() << ", " << getFilter().getType()
+          << ") -> " << getResult().getType();
+}
+
 LogicalResult LoadOp::verify() {
   auto tensorType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
   auto memRefType = llvm::dyn_cast<MemRefType>(getSource().getType());
@@ -587,6 +616,64 @@ LogicalResult Conv2DOp::verify() {
     return emitOpError("conv2d kernel configuration produces an invalid output shape");
   if (*outH != resultType.getDimSize(1) || *outW != resultType.getDimSize(2))
     return emitOpError("conv2d result spatial dimensions do not match pad/stride/dilation");
+  return success();
+}
+
+LogicalResult DepthwiseConv2DOp::verify() {
+  auto inputType = llvm::dyn_cast<RankedTensorType>(getInput().getType());
+  auto filterType = llvm::dyn_cast<RankedTensorType>(getFilter().getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+  if (!inputType || !filterType || !resultType)
+    return emitOpError("requires ranked tensor operands and result");
+  if (!inputType.hasStaticShape() || !filterType.hasStaticShape() ||
+      !resultType.hasStaticShape())
+    return emitOpError("requires statically shaped tensors");
+  if (inputType.getRank() != 4 || filterType.getRank() != 4 ||
+      resultType.getRank() != 4)
+    return emitOpError("requires rank-4 input, filter, and result tensors");
+  if (getPadAttr().size() != 4)
+    return emitOpError("pad attribute must have exactly 4 entries");
+  if (getStrideAttr().size() != 2)
+    return emitOpError("stride attribute must have exactly 2 entries");
+  if (getDilationAttr().size() != 2)
+    return emitOpError("dilation attribute must have exactly 2 entries");
+  for (int64_t pad : getPadAttr().asArrayRef()) {
+    if (pad < 0)
+      return emitOpError("pad attribute entries must be non-negative");
+  }
+  for (int64_t stride : getStrideAttr().asArrayRef()) {
+    if (stride <= 0)
+      return emitOpError("stride attribute entries must be positive");
+  }
+  for (int64_t dilation : getDilationAttr().asArrayRef()) {
+    if (dilation <= 0)
+      return emitOpError("dilation attribute entries must be positive");
+  }
+  if (!inputType.getElementType().isInteger(8) ||
+      !filterType.getElementType().isInteger(8))
+    return emitOpError("depthwise_conv2d requires i8 input and filter tensors");
+  if (!resultType.getElementType().isF32() &&
+      !resultType.getElementType().isBF16())
+    return emitOpError("depthwise_conv2d requires f32 or bf16 result tensors");
+  if (filterType.getDimSize(2) != 1)
+    return emitOpError("depthwise_conv2d requires filter input-channel dimension to be 1");
+  if (inputType.getDimSize(0) != resultType.getDimSize(0))
+    return emitOpError("depthwise_conv2d result batch dimension must match input");
+  if (inputType.getDimSize(3) != resultType.getDimSize(3))
+    return emitOpError("depthwise_conv2d requires input and result channel dimensions to match");
+  if (filterType.getDimSize(3) != inputType.getDimSize(3))
+    return emitOpError("depthwise_conv2d requires filter channel dimension to match input/output channels");
+
+  FailureOr<int64_t> outH = computeConvOutputDim(
+      inputType.getDimSize(1), filterType.getDimSize(0), getPadAttr()[0], getPadAttr()[2],
+      getStrideAttr()[0], getDilationAttr()[0]);
+  FailureOr<int64_t> outW = computeConvOutputDim(
+      inputType.getDimSize(2), filterType.getDimSize(1), getPadAttr()[1], getPadAttr()[3],
+      getStrideAttr()[1], getDilationAttr()[1]);
+  if (failed(outH) || failed(outW))
+    return emitOpError("depthwise_conv2d kernel configuration produces an invalid output shape");
+  if (*outH != resultType.getDimSize(1) || *outW != resultType.getDimSize(2))
+    return emitOpError("depthwise_conv2d result spatial dimensions do not match pad/stride/dilation");
   return success();
 }
 
