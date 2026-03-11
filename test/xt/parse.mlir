@@ -134,6 +134,18 @@ func.func @reduce_ops(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf32>) {
   func.return
 }
 
+func.func @reshape_transpose(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero) : memref<2048x16xf32> -> tensor<64x16xf32>
+  %1 = xt.reshape(%0) : (tensor<64x16xf32>) -> tensor<2x32x16xf32>
+  %2 = xt.transpose(%1) : (tensor<2x32x16xf32>) -> tensor<2x16x32xf32>
+  %3 = xt.reshape(%2) : (tensor<2x16x32xf32>) -> tensor<64x16xf32>
+  xt.store(%3, %arg1, %bid_x, %zero) : tensor<64x16xf32> -> memref<2048x16xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @exp_1d
 // CHECK: %[[BIDX1:.*]], %[[BIDY1:.*]], %[[BIDZ1:.*]] = xt.get_tile_block_id() : i32
 // CHECK: %[[LOAD1:.*]] = xt.load(%arg0, %[[BIDX1]]) : memref<2048xf32> -> tensor<16xf32>
@@ -204,3 +216,10 @@ func.func @reduce_ops(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf32>) {
 // CHECK: %[[SUB0:.*]] = xt.sub(%[[LOADR]], %[[SUM]]) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
 // CHECK: %[[SUB1:.*]] = xt.sub(%[[SUB0]], %[[MAX]]) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
 // CHECK: xt.store(%[[SUB1]], %arg1, %[[BIDXR]], %[[ZEROR]]) : tensor<16x16xf32> -> memref<2048x16xf32>
+// CHECK-LABEL: func.func @reshape_transpose
+// CHECK: %[[BIDXT:.*]], %[[BIDYT:.*]], %[[BIDZT:.*]] = xt.get_tile_block_id() : i32
+// CHECK: %[[LOADT:.*]] = xt.load(%arg0, %[[BIDXT]], %[[ZEROT:.*]]) : memref<2048x16xf32> -> tensor<64x16xf32>
+// CHECK: %[[RESHAPE0:.*]] = xt.reshape(%[[LOADT]]) : (tensor<64x16xf32>) -> tensor<2x32x16xf32>
+// CHECK: %[[TRANSPOSE:.*]] = xt.transpose(%[[RESHAPE0]]) : (tensor<2x32x16xf32>) -> tensor<2x16x32xf32>
+// CHECK: %[[RESHAPE1:.*]] = xt.reshape(%[[TRANSPOSE]]) : (tensor<2x16x32xf32>) -> tensor<64x16xf32>
+// CHECK: xt.store(%[[RESHAPE1]], %arg1, %[[BIDXT]], %[[ZEROT]]) : tensor<64x16xf32> -> memref<2048x16xf32>

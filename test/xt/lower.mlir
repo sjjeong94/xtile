@@ -117,6 +117,17 @@ func.func @lower_reduce_ops(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf3
   func.return
 }
 
+func.func @lower_reshape_transpose(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+  %0 = xt.load(%arg0, %bid_x, %zero) : memref<2048x16xf32> -> tensor<64x16xf32>
+  %1 = xt.reshape(%0) : (tensor<64x16xf32>) -> tensor<2x32x16xf32>
+  %2 = xt.transpose(%1) : (tensor<2x32x16xf32>) -> tensor<2x16x32xf32>
+  %3 = xt.reshape(%2) : (tensor<2x16x32xf32>) -> tensor<64x16xf32>
+  xt.store(%3, %arg1, %bid_x, %zero) : tensor<64x16xf32> -> memref<2048x16xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @lower_1d
 // CHECK-NOT: xt.
 // CHECK: scf.for
@@ -198,4 +209,12 @@ func.func @lower_reduce_ops(%arg0: memref<2048x16xf32>, %arg1: memref<2048x16xf3
 // CHECK: arith.addf
 // CHECK: arith.maximumf
 // CHECK: tensor.insert
+// CHECK: memref.store
+// CHECK-LABEL: func.func @lower_reshape_transpose
+// CHECK-NOT: xt.
+// CHECK: scf.for
+// CHECK: arith.muli
+// CHECK: arith.divsi
+// CHECK: arith.remsi
+// CHECK: tensor.extract
 // CHECK: memref.store

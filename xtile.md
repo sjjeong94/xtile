@@ -154,7 +154,7 @@ func.func @sum(%arg0: memref<2048x16xf32>, %arg2: memref<2048x16xf32>) {
   %zero = arith.constant 0 : i32
 
   %0 = xt.load(%arg0, %bid_x, %zero) : memref<2048x16xf32> -> tensor<16x16xf32>
-  %1 = xt.reduce_sum(%0): tensor<16x16xf32> -> tensor<16x1xf32>
+  %1 = xt.reduce_sum(%0) : tensor<16x16xf32> -> tensor<16x1xf32>
   %2 = xt.sub(%0, %1) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
   xt.store(%2, %arg2, %bid_x, %zero) : tensor<16x16xf32> -> memref<2048x16xf32>
   func.return
@@ -165,9 +165,24 @@ func.func @max(%arg0: memref<2048x16xf32>, %arg2: memref<2048x16xf32>) {
   %zero = arith.constant 0 : i32
 
   %0 = xt.load(%arg0, %bid_x, %zero) : memref<2048x16xf32> -> tensor<16x16xf32>
-  %1 = xt.reduce_max(%0): tensor<16x16xf32> -> tensor<16x1xf32>
+  %1 = xt.reduce_max(%0) : tensor<16x16xf32> -> tensor<16x1xf32>
   %2 = xt.sub(%0, %1) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
   xt.store(%2, %arg2, %bid_x, %zero) : tensor<16x16xf32> -> memref<2048x16xf32>
+  func.return
+}
+```
+
+### Reshape / Transpose examples
+```mlir
+func.func @reshape_transpose(%arg0: memref<2048x16xf32>, %arg2: memref<2048x16xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero) : memref<2048x16xf32> -> tensor<64x16xf32>
+  %1 = xt.reshape(%0) : tensor<64x16xf32> -> tensor<2x32x16xf32>
+  %2 = xt.transpose(%1) : tensor<2x32x16xf32> -> tensor<2x16x32xf32>
+  %3 = xt.reshape(%2) : tensor<2x16x32xf32> -> tensor<64x16xf32>
+  xt.store(%3, %arg2, %bid_x, %zero) : tensor<64x16xf32> -> memref<2048x16xf32>
   func.return
 }
 ```

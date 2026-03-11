@@ -131,6 +131,29 @@ static SmallVector<Value> computeBroadcastIndices(OpBuilder &builder, Location l
   return indices;
 }
 
+static Value linearizeIndices(OpBuilder &builder, Location loc, ArrayRef<Value> indices,
+                              ArrayRef<int64_t> shape) {
+  Value linear = createIndexConstant(builder, loc, 0);
+  for (auto [index, dim] : llvm::zip_equal(indices, shape)) {
+    linear = builder.create<arith::MulIOp>(
+        loc, linear, createIndexConstant(builder, loc, dim));
+    linear = builder.create<arith::AddIOp>(loc, linear, index);
+  }
+  return linear;
+}
+
+static SmallVector<Value> delinearizeIndex(OpBuilder &builder, Location loc, Value linearIndex,
+                                           ArrayRef<int64_t> shape) {
+  SmallVector<Value> indices(shape.size());
+  Value remaining = linearIndex;
+  for (int64_t i = shape.size() - 1; i >= 0; --i) {
+    Value dim = createIndexConstant(builder, loc, shape[i]);
+    indices[i] = builder.create<arith::RemSIOp>(loc, remaining, dim);
+    remaining = builder.create<arith::DivSIOp>(loc, remaining, dim);
+  }
+  return indices;
+}
+
 namespace {
 struct GetTileBlockIdLowering : public OpRewritePattern<GetTileBlockIdOp> {
   GetTileBlockIdLowering(MLIRContext *context, int32_t x, int32_t y, int32_t z)
@@ -617,6 +640,50 @@ struct ReduceLastDimLowering : public OpRewritePattern<OpTy> {
   }
 };
 
+struct ReshapeLowering : public OpRewritePattern<ReshapeOp> {
+  using OpRewritePattern<ReshapeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ReshapeOp op,
+                                PatternRewriter &rewriter) const override {
+    auto inputType = llvm::cast<RankedTensorType>(op.getInput().getType());
+    auto resultType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    Location loc = op.getLoc();
+
+    Value result = createTensorLoopNest(
+        rewriter, loc, resultType,
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          SmallVector<Value> resultIndices(ivs.begin(), ivs.end());
+          Value linearIndex =
+              linearizeIndices(builder, nestedLoc, resultIndices, resultType.getShape());
+          SmallVector<Value> inputIndices = delinearizeIndex(
+              builder, nestedLoc, linearIndex, inputType.getShape());
+          return builder.create<tensor::ExtractOp>(nestedLoc, op.getInput(),
+                                                   inputIndices);
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
+struct TransposeLowering : public OpRewritePattern<TransposeOp> {
+  using OpRewritePattern<TransposeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TransposeOp op,
+                                PatternRewriter &rewriter) const override {
+    auto resultType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    Location loc = op.getLoc();
+
+    Value result = createTensorLoopNest(
+        rewriter, loc, resultType,
+        [&](OpBuilder &builder, Location nestedLoc, ValueRange ivs) -> Value {
+          return builder.create<tensor::ExtractOp>(
+              nestedLoc, op.getInput(), ValueRange{ivs[0], ivs[2], ivs[1]});
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
 class XTLowerToLoopsPass
     : public mlir::xt::impl::XTLowerToLoopsBase<XTLowerToLoopsPass> {
 public:
@@ -643,6 +710,7 @@ public:
                  Conv2DLowering, DepthwiseConv2DLowering,
                  ReduceLastDimLowering<ReduceSumOp>,
                  ReduceLastDimLowering<ReduceMaxOp>,
+                 ReshapeLowering, TransposeLowering,
                  MMALowering>(context);
 
     if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))

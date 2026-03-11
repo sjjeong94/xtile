@@ -143,4 +143,20 @@ def XT_ReduceMaxOp : XT_Op<"reduce_max", [Pure]> {
   let hasVerifier = 1;
 }
 
+def XT_ReshapeOp : XT_Op<"reshape", [Pure]> {
+  let summary = "reshape a tensor tile";
+  let arguments = (ins XT_RankedTensor:$input);
+  let results = (outs XT_RankedTensor:$result);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def XT_TransposeOp : XT_Op<"transpose", [Pure]> {
+  let summary = "transpose a rank-3 tensor tile by swapping the last two dimensions";
+  let arguments = (ins XT_RankedTensor:$input);
+  let results = (outs XT_RankedTensor:$result);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
 #endif // XT_OPS

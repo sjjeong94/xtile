@@ -79,3 +79,17 @@ func.func @bad_reduce_shape(%arg0: tensor<16x16xf32>) -> tensor<8x1xf32> {
 }
 
 // ERR: reduce result shape must match input shape except for the last dimension, which must be 1
+
+func.func @bad_reshape_shape(%arg0: tensor<64x16xf32>) -> tensor<2x16x16xf32> {
+  %0 = xt.reshape(%arg0) : (tensor<64x16xf32>) -> tensor<2x16x16xf32>
+  func.return %0 : tensor<2x16x16xf32>
+}
+
+// ERR: reshape requires operand and result to have the same number of elements
+
+func.func @bad_transpose_shape(%arg0: tensor<2x32x16xf32>) -> tensor<2x32x16xf32> {
+  %0 = xt.transpose(%arg0) : (tensor<2x32x16xf32>) -> tensor<2x32x16xf32>
+  func.return %0 : tensor<2x32x16xf32>
+}
+
+// ERR: transpose result shape must preserve dim 0 and swap dims 1 and 2

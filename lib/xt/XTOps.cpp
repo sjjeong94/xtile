@@ -413,6 +413,28 @@ void ReduceMaxOp::print(OpAsmPrinter &printer) {
   printer << " : (" << getInput().getType() << ") -> " << getResult().getType();
 }
 
+ParseResult ReshapeOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseFunctionalTypeOp(parser, result, operands, 1);
+}
+
+void ReshapeOp::print(OpAsmPrinter &printer) {
+  printer << "(" << getInput() << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getInput().getType() << ") -> " << getResult().getType();
+}
+
+ParseResult TransposeOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  return parseFunctionalTypeOp(parser, result, operands, 1);
+}
+
+void TransposeOp::print(OpAsmPrinter &printer) {
+  printer << "(" << getInput() << ")";
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : (" << getInput().getType() << ") -> " << getResult().getType();
+}
+
 LogicalResult LoadOp::verify() {
   auto tensorType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
   auto memRefType = llvm::dyn_cast<MemRefType>(getSource().getType());
@@ -730,6 +752,47 @@ LogicalResult ReduceSumOp::verify() {
 
 LogicalResult ReduceMaxOp::verify() {
   return verifyLastDimReductionShape(*this, getInput(), getResult());
+}
+
+static int64_t getStaticElementCount(RankedTensorType type) {
+  int64_t count = 1;
+  for (int64_t dim : type.getShape())
+    count *= dim;
+  return count;
+}
+
+LogicalResult ReshapeOp::verify() {
+  auto inputType = llvm::dyn_cast<RankedTensorType>(getInput().getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+  if (!inputType || !resultType)
+    return emitOpError("requires ranked tensor operand and result");
+  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
+    return emitOpError("requires statically shaped tensors");
+  if (inputType.getElementType() != resultType.getElementType())
+    return emitOpError("requires operand and result element types to match");
+  if (getStaticElementCount(inputType) != getStaticElementCount(resultType))
+    return emitOpError(
+        "reshape requires operand and result to have the same number of elements");
+  return success();
+}
+
+LogicalResult TransposeOp::verify() {
+  auto inputType = llvm::dyn_cast<RankedTensorType>(getInput().getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+  if (!inputType || !resultType)
+    return emitOpError("requires ranked tensor operand and result");
+  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
+    return emitOpError("requires statically shaped tensors");
+  if (inputType.getElementType() != resultType.getElementType())
+    return emitOpError("requires operand and result element types to match");
+  if (inputType.getRank() != 3 || resultType.getRank() != 3)
+    return emitOpError("transpose requires rank-3 operand and result tensors");
+  if (inputType.getDimSize(0) != resultType.getDimSize(0) ||
+      inputType.getDimSize(1) != resultType.getDimSize(2) ||
+      inputType.getDimSize(2) != resultType.getDimSize(1))
+    return emitOpError(
+        "transpose result shape must preserve dim 0 and swap dims 1 and 2");
+  return success();
 }
 
 static bool isZeroTensor(Value value) {
