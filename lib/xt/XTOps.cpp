@@ -124,6 +124,52 @@ static void printSingleTypeResultOp(OpAsmPrinter &printer, Operation *op) {
   printer << " : " << op->getResult(0).getType();
 }
 
+static ParseResult parseConv2DAttrs(OpAsmParser &parser, OperationState &result) {
+  Builder &builder = parser.getBuilder();
+  SmallVector<int64_t> pad, stride, dilation;
+  auto parseArray = [&](StringRef keyword,
+                        SmallVectorImpl<int64_t> &values) -> ParseResult {
+    if (parser.parseKeyword(keyword) || parser.parseEqual() ||
+        parser.parseLSquare())
+      return failure();
+    do {
+      int64_t value;
+      if (parser.parseInteger(value))
+        return failure();
+      values.push_back(value);
+    } while (succeeded(parser.parseOptionalComma()));
+    return parser.parseRSquare();
+  };
+
+  if (parser.parseLBrace() || parseArray("pad", pad) || parser.parseComma() ||
+      parseArray("stride", stride) || parser.parseComma() ||
+      parseArray("dilation", dilation) || parser.parseRBrace())
+    return failure();
+  result.addAttribute("pad", builder.getDenseI64ArrayAttr(pad));
+  result.addAttribute("stride", builder.getDenseI64ArrayAttr(stride));
+  result.addAttribute("dilation", builder.getDenseI64ArrayAttr(dilation));
+  return success();
+}
+
+static void printConv2DAttrs(OpAsmPrinter &printer, DenseI64ArrayAttr pad,
+                             DenseI64ArrayAttr stride,
+                             DenseI64ArrayAttr dilation) {
+  auto printArray = [&](StringRef keyword, DenseI64ArrayAttr values) {
+    printer << keyword << " = [";
+    llvm::interleaveComma(values.asArrayRef(), printer,
+                          [&](int64_t value) { printer << value; });
+    printer << "]";
+  };
+
+  printer << " {";
+  printArray("pad", pad);
+  printer << ", ";
+  printArray("stride", stride);
+  printer << ", ";
+  printArray("dilation", dilation);
+  printer << "}";
+}
+
 ParseResult GetTileBlockIdOp::parse(OpAsmParser &parser, OperationState &result) {
   Type type;
   if (parser.parseLParen() || parser.parseRParen() ||
@@ -327,6 +373,35 @@ void MMAOp::print(OpAsmPrinter &printer) {
           << getAcc().getType() << ") -> " << getResult().getType();
 }
 
+ParseResult Conv2DOp::parse(OpAsmParser &parser, OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  SmallVector<Type> operandTypes;
+  Type resultType;
+  if (parser.parseLParen() || parser.parseOperandList(operands, 2) ||
+      parser.parseRParen() || parseConv2DAttrs(parser, result) ||
+      parser.parseColon() || parser.parseLParen() ||
+      parser.parseTypeList(operandTypes) || parser.parseRParen() ||
+      parser.parseArrow() || parser.parseType(resultType))
+    return failure();
+  if (operandTypes.size() != 2)
+    return parser.emitError(parser.getNameLoc(),
+                            "conv2d expects exactly two operand types");
+  if (parser.resolveOperands(operands, operandTypes, parser.getNameLoc(),
+                             result.operands))
+    return failure();
+  result.addTypes(resultType);
+  return success();
+}
+
+void Conv2DOp::print(OpAsmPrinter &printer) {
+  printer << "(";
+  printer.printOperands(getOperands());
+  printer << ")";
+  printConv2DAttrs(printer, getPadAttr(), getStrideAttr(), getDilationAttr());
+  printer << " : (" << getInput().getType() << ", " << getFilter().getType()
+          << ") -> " << getResult().getType();
+}
+
 LogicalResult LoadOp::verify() {
   auto tensorType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
   auto memRefType = llvm::dyn_cast<MemRefType>(getSource().getType());
@@ -456,6 +531,16 @@ static LogicalResult verifyMatmulLikeShape(Operation *op, RankedTensorType lhsTy
   return success();
 }
 
+static FailureOr<int64_t> computeConvOutputDim(int64_t inputSize, int64_t kernelSize,
+                                               int64_t padBefore, int64_t padAfter,
+                                               int64_t stride, int64_t dilation) {
+  int64_t effectiveKernel = dilation * (kernelSize - 1) + 1;
+  int64_t numerator = inputSize + padBefore + padAfter - effectiveKernel;
+  if (numerator < 0)
+    return failure();
+  return numerator / stride + 1;
+}
+
 LogicalResult MatmulOp::verify() {
   auto lhsType = llvm::dyn_cast<RankedTensorType>(getLhs().getType());
   auto rhsType = llvm::dyn_cast<RankedTensorType>(getRhs().getType());
@@ -490,6 +575,62 @@ LogicalResult MMAOp::verify() {
   Type accElem = accType.getElementType();
   if (!accElem.isF32() && !accElem.isBF16())
     return emitOpError("mma requires f32 or bf16 accumulator and result tensors");
+  return success();
+}
+
+LogicalResult Conv2DOp::verify() {
+  auto inputType = llvm::dyn_cast<RankedTensorType>(getInput().getType());
+  auto filterType = llvm::dyn_cast<RankedTensorType>(getFilter().getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+  if (!inputType || !filterType || !resultType)
+    return emitOpError("requires ranked tensor operands and result");
+  if (!inputType.hasStaticShape() || !filterType.hasStaticShape() ||
+      !resultType.hasStaticShape())
+    return emitOpError("requires statically shaped tensors");
+  if (inputType.getRank() != 4 || filterType.getRank() != 4 ||
+      resultType.getRank() != 4)
+    return emitOpError("requires rank-4 input, filter, and result tensors");
+  if (getPadAttr().size() != 4)
+    return emitOpError("pad attribute must have exactly 4 entries");
+  if (getStrideAttr().size() != 2)
+    return emitOpError("stride attribute must have exactly 2 entries");
+  if (getDilationAttr().size() != 2)
+    return emitOpError("dilation attribute must have exactly 2 entries");
+  for (int64_t pad : getPadAttr().asArrayRef()) {
+    if (pad < 0)
+      return emitOpError("pad attribute entries must be non-negative");
+  }
+  for (int64_t stride : getStrideAttr().asArrayRef()) {
+    if (stride <= 0)
+      return emitOpError("stride attribute entries must be positive");
+  }
+  for (int64_t dilation : getDilationAttr().asArrayRef()) {
+    if (dilation <= 0)
+      return emitOpError("dilation attribute entries must be positive");
+  }
+  if (!inputType.getElementType().isInteger(8) ||
+      !filterType.getElementType().isInteger(8))
+    return emitOpError("conv2d requires i8 input and filter tensors");
+  if (!resultType.getElementType().isF32() &&
+      !resultType.getElementType().isBF16())
+    return emitOpError("conv2d requires f32 or bf16 result tensors");
+  if (inputType.getDimSize(3) != filterType.getDimSize(2))
+    return emitOpError("conv2d requires input and filter channel dimensions to match");
+  if (inputType.getDimSize(0) != resultType.getDimSize(0))
+    return emitOpError("conv2d result batch dimension must match input");
+  if (filterType.getDimSize(3) != resultType.getDimSize(3))
+    return emitOpError("conv2d result channel dimension must match filter output channels");
+
+  FailureOr<int64_t> outH = computeConvOutputDim(
+      inputType.getDimSize(1), filterType.getDimSize(0), getPadAttr()[0], getPadAttr()[2],
+      getStrideAttr()[0], getDilationAttr()[0]);
+  FailureOr<int64_t> outW = computeConvOutputDim(
+      inputType.getDimSize(2), filterType.getDimSize(1), getPadAttr()[1], getPadAttr()[3],
+      getStrideAttr()[1], getDilationAttr()[1]);
+  if (failed(outH) || failed(outW))
+    return emitOpError("conv2d kernel configuration produces an invalid output shape");
+  if (*outH != resultType.getDimSize(1) || *outW != resultType.getDimSize(2))
+    return emitOpError("conv2d result spatial dimensions do not match pad/stride/dilation");
   return success();
 }
 

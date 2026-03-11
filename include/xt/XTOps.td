@@ -107,4 +107,15 @@ def XT_MMAOp : XT_Op<"mma", [Pure]> {
   let hasVerifier = 1;
 }
 
+def XT_Conv2DOp : XT_Op<"conv2d", [Pure]> {
+  let summary = "tile 2d convolution";
+  let arguments = (ins XT_RankedTensor:$input, XT_RankedTensor:$filter,
+                       DenseI64ArrayAttr:$pad,
+                       DenseI64ArrayAttr:$stride,
+                       DenseI64ArrayAttr:$dilation);
+  let results = (outs XT_RankedTensor:$result);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
 #endif // XT_OPS

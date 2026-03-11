@@ -118,3 +118,17 @@ func.func @broadcast(%arg0: memref<2048x16xf32>, %arg1: memref<1x16xf32>, %arg2:
   func.return
 }
 ```
+
+### conv2d examples
+```mlir
+func.func @broadcast(%arg0: memref<8x32x64x128xi8>, %arg1: memref<3x3x128x256xi8>, %arg2: memref<8x32x64x256xf32>) {
+  %bid_x, %bid_y, %bid_z = xt.get_tile_block_id() : i32
+  %zero = arith.constant 0 : i32
+
+  %0 = xt.load(%arg0, %bid_x, %zero, %zero, %zero) {tile=[1, 32, 64, 128]} : memref<8x32x64x128xi8> -> tensor<1x32x64x128xi8>
+  %1 = xt.load(%arg1, %zero, %zero, %zero, %bid_y) {tile=[3, 3, 128, 64], shared=1} : memref<3x3x128x256xi8> -> tensor<3x3x128x64xi8>
+  %2 = xt.conv2d(%0, %1) {pad=[1, 1, 1, 1], stride=[1, 1], dilation=[1, 1]} : (tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8>) -> tensor<1x32x64x64xf32>
+  xt.store(%2, %arg2, %bid_x, %zero, %zero, %bid_y) {tile=[1, 32, 64, 64]} : tensor<1x32x64x64xf32> -> memref<8x32x64x256xf32>
+  func.return
+}
+```

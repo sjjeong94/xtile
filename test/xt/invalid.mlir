@@ -75,3 +75,17 @@ func.func @bad_broadcast_shape(%arg0: tensor<16x16xf32>, %arg1: tensor<8x16xf32>
 }
 
 // ERR: operands are not broadcast-compatible with result tensor type
+
+func.func @bad_conv2d_pad_attr(%arg0: tensor<1x32x64x128xi8>, %arg1: tensor<3x3x128x64xi8>) -> tensor<1x32x64x64xf32> {
+  %0 = xt.conv2d(%arg0, %arg1) {pad = [1, 1, 1], stride = [1, 1], dilation = [1, 1]} : (tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8>) -> tensor<1x32x64x64xf32>
+  func.return %0 : tensor<1x32x64x64xf32>
+}
+
+// ERR: pad attribute must have exactly 4 entries
+
+func.func @bad_conv2d_shape(%arg0: tensor<1x32x64x128xi8>, %arg1: tensor<3x3x64x64xi8>) -> tensor<1x32x64x64xf32> {
+  %0 = xt.conv2d(%arg0, %arg1) {pad = [1, 1, 1, 1], stride = [1, 1], dilation = [1, 1]} : (tensor<1x32x64x128xi8>, tensor<3x3x64x64xi8>) -> tensor<1x32x64x64xf32>
+  func.return %0 : tensor<1x32x64x64xf32>
+}
+
+// ERR: conv2d requires input and filter channel dimensions to match
