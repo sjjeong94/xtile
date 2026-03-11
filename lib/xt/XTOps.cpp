@@ -11,27 +11,12 @@ using namespace mlir::xt;
 #define GET_OP_CLASSES
 #include "xt/XTOps.cpp.inc"
 
-static LogicalResult verifyTileAttr(Operation *op, DenseI64ArrayAttr tile,
-                                    RankedTensorType tensorType) {
-  if (!tile || tile.empty())
-    return op->emitOpError("requires tile attribute with at least one entry");
-  if (!tensorType.hasStaticShape())
-    return op->emitOpError("requires a statically shaped tensor");
-  if (static_cast<int64_t>(tile.size()) != tensorType.getRank())
-    return op->emitOpError("tile rank must match tensor rank");
-  for (int64_t i = 0, e = tensorType.getRank(); i < e; ++i) {
-    if (tile[i] <= 0)
-      return op->emitOpError("requires positive tile dimensions");
-    if (tensorType.getDimSize(i) != tile[i])
-      return op->emitOpError("tile attribute must match tensor shape");
-  }
-  return success();
-}
-
 static LogicalResult verifyMemRefAndTensor(Operation *op, MemRefType memRefType,
                                            RankedTensorType tensorType) {
   if (!memRefType)
     return op->emitOpError("requires a ranked memref operand");
+  if (!tensorType || !tensorType.hasStaticShape())
+    return op->emitOpError("requires a statically shaped tensor");
   if (memRefType.getRank() != tensorType.getRank())
     return op->emitOpError("memref rank must match tensor rank");
   if (memRefType.getElementType() != tensorType.getElementType())
@@ -74,46 +59,23 @@ static ParseResult parseFunctionalTypeOp(
   return success();
 }
 
-static ParseResult parseTileAttr(OpAsmParser &parser,
-                                 OperationState &result) {
+static ParseResult parseSharedAttr(OpAsmParser &parser,
+                                   OperationState &result) {
   Builder &builder = parser.getBuilder();
-  SmallVector<int64_t> tileDims;
-  IntegerAttr sharedAttr;
-  if (parser.parseLBrace() || parser.parseKeyword("tile") || parser.parseEqual() ||
-      parser.parseLSquare())
+  if (failed(parser.parseOptionalLBrace()))
+    return success();
+  int64_t sharedValue;
+  if (parser.parseKeyword("shared") || parser.parseEqual() ||
+      parser.parseInteger(sharedValue) || parser.parseRBrace())
     return failure();
-  do {
-    int64_t dim;
-    if (parser.parseInteger(dim))
-      return failure();
-    tileDims.push_back(dim);
-  } while (succeeded(parser.parseOptionalComma()));
-  if (parser.parseRSquare())
-    return failure();
-  if (succeeded(parser.parseOptionalComma())) {
-    int64_t sharedValue;
-    if (parser.parseKeyword("shared") || parser.parseEqual() ||
-        parser.parseInteger(sharedValue))
-      return failure();
-    sharedAttr = builder.getI64IntegerAttr(sharedValue);
-  }
-  if (parser.parseRBrace())
-    return failure();
-  result.addAttribute("tile", builder.getDenseI64ArrayAttr(tileDims));
-  if (sharedAttr)
-    result.addAttribute("shared", sharedAttr);
+  result.addAttribute("shared", builder.getI64IntegerAttr(sharedValue));
   return success();
 }
 
-static void printTileAttr(OpAsmPrinter &printer, DenseI64ArrayAttr tile,
-                          IntegerAttr shared = {}) {
-  printer << " {tile = [";
-  llvm::interleaveComma(tile.asArrayRef(), printer,
-                        [&](int64_t dim) { printer << dim; });
-  printer << "]";
-  if (shared)
-    printer << ", shared = " << shared.getInt();
-  printer << "}";
+static void printSharedAttr(OpAsmPrinter &printer, IntegerAttr shared = {}) {
+  if (!shared)
+    return;
+  printer << " {shared = " << shared.getInt() << "}";
 }
 
 static void printSingleTypeResultOp(OpAsmPrinter &printer, Operation *op) {
@@ -193,7 +155,7 @@ ParseResult LoadOp::parse(OpAsmParser &parser, OperationState &result) {
   Type coordType = parser.getBuilder().getI32Type();
   if (parser.parseLParen() || parser.parseOperand(source) ||
       parser.parseTrailingOperandList(coords) || parser.parseRParen() ||
-      parseTileAttr(parser, result) ||
+      parseSharedAttr(parser, result) ||
       parser.parseColonType(sourceType) || parser.parseArrow() ||
       parser.parseType(resultType))
     return failure();
@@ -209,7 +171,7 @@ void LoadOp::print(OpAsmPrinter &printer) {
   for (Value coord : getCoords())
     printer << ", " << coord;
   printer << ")";
-  printTileAttr(printer, getTileAttr(), getSharedAttr());
+  printSharedAttr(printer, getSharedAttr());
   printer << " : " << getSource().getType() << " -> " << getResult().getType();
 }
 
@@ -223,7 +185,6 @@ ParseResult StoreOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parser.parseLParen() || parser.parseOperand(value) ||
       parser.parseComma() || parser.parseOperand(dest) ||
       parser.parseTrailingOperandList(coords) || parser.parseRParen() ||
-      parseTileAttr(parser, result) ||
       parser.parseColonType(valueType) || parser.parseArrow() ||
       parser.parseType(destType))
     return failure();
@@ -239,7 +200,6 @@ void StoreOp::print(OpAsmPrinter &printer) {
   for (Value coord : getCoords())
     printer << ", " << coord;
   printer << ")";
-  printTileAttr(printer, getTileAttr());
   printer << " : " << getValue().getType() << " -> " << getDest().getType();
 }
 
@@ -409,13 +369,11 @@ LogicalResult LoadOp::verify() {
     return emitOpError("requires a ranked tensor result");
   if (getCoords().empty())
     return emitOpError("requires at least one coordinate");
-  if (failed(verifyTileAttr(*this, getTileAttr(), tensorType)))
-    return failure();
   if (auto shared = getSharedAttr();
       shared && shared.getInt() != 0 && shared.getInt() != 1)
     return emitOpError("shared attribute must be 0 or 1");
   if (static_cast<int64_t>(getCoords().size()) != tensorType.getRank())
-    return emitOpError("coordinate count must match tile rank");
+    return emitOpError("coordinate count must match tensor rank");
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
 }
 
@@ -426,10 +384,8 @@ LogicalResult StoreOp::verify() {
     return emitOpError("requires a ranked tensor operand");
   if (getCoords().empty())
     return emitOpError("requires at least one coordinate");
-  if (failed(verifyTileAttr(*this, getTileAttr(), tensorType)))
-    return failure();
   if (static_cast<int64_t>(getCoords().size()) != tensorType.getRank())
-    return emitOpError("coordinate count must match tile rank");
+    return emitOpError("coordinate count must match tensor rank");
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
 }
 

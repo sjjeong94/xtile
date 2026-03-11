@@ -74,11 +74,11 @@ static void createSideEffectLoopNest(
 }
 
 static SmallVector<Value> computeBaseOffsets(PatternRewriter &rewriter, Location loc,
-                                             DenseI64ArrayAttr tile,
+                                             RankedTensorType tensorType,
                                              ValueRange coords) {
   SmallVector<Value> offsets;
-  offsets.reserve(tile.size());
-  for (auto [coord, tileDim] : llvm::zip_equal(coords, tile.asArrayRef())) {
+  offsets.reserve(tensorType.getRank());
+  for (auto [coord, tileDim] : llvm::zip_equal(coords, tensorType.getShape())) {
     Value coordIndex = asIndex(rewriter, loc, coord);
     Value tileSize = createIndexConstant(rewriter, loc, tileDim);
     offsets.push_back(rewriter.create<arith::MulIOp>(loc, coordIndex, tileSize));
@@ -161,7 +161,7 @@ struct LoadLowering : public OpRewritePattern<LoadOp> {
     auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
     Location loc = op.getLoc();
     SmallVector<Value> bases =
-        computeBaseOffsets(rewriter, loc, op.getTileAttr(), op.getCoords());
+        computeBaseOffsets(rewriter, loc, tensorType, op.getCoords());
 
     Value result = createTensorLoopNest(
         rewriter, loc, tensorType,
@@ -185,7 +185,7 @@ struct StoreLowering : public OpRewritePattern<StoreOp> {
     Location loc = op.getLoc();
     auto tensorType = llvm::cast<RankedTensorType>(op.getValue().getType());
     SmallVector<Value> bases =
-        computeBaseOffsets(rewriter, loc, op.getTileAttr(), op.getCoords());
+        computeBaseOffsets(rewriter, loc, tensorType, op.getCoords());
 
     createSideEffectLoopNest(
         rewriter, loc, tensorType.getShape(),
