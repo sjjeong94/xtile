@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xtile"
+version = "0.1.0"
+description = "Python DSL for xTile MLIR kernels"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["xtile", "xtile.*", "mlir", "mlir.*"]
+namespaces = true
