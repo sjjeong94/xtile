@@ -15,6 +15,7 @@ def test_build_wheel_script_produces_vendorized_wheel(tmp_path: Path):
     dist_dir = tmp_path / "dist"
     env = dict(os.environ)
     env["XTILE_DIST_DIR"] = str(dist_dir)
+    env["XTILE_PYTHON_BIN"] = sys.executable
 
     subprocess.run(
         [str(SCRIPT_PATH)],
@@ -28,14 +29,34 @@ def test_build_wheel_script_produces_vendorized_wheel(tmp_path: Path):
 
     with zipfile.ZipFile(wheels[0]) as archive:
         names = archive.namelist()
-        assert any(name.startswith("xtile/__init__.py") for name in names)
-        assert any(name.startswith("mlir/_mlir_libs/_mlir") for name in names)
+        assert any(name.endswith("xtile/__init__.py") for name in names)
+        assert any("/mlir/_mlir_libs/_mlir" in name for name in names)
+
+
+def test_built_wheel_uses_python_specific_tag(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    env = dict(os.environ)
+    env["XTILE_DIST_DIR"] = str(dist_dir)
+    env["XTILE_PYTHON_BIN"] = sys.executable
+
+    subprocess.run(
+        [str(SCRIPT_PATH)],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+    )
+
+    wheel = next(dist_dir.glob("*.whl"))
+    expected_tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    assert expected_tag in wheel.name
+    assert "none-any.whl" not in wheel.name
 
 
 def test_built_wheel_imports_xtile_and_mlir(tmp_path: Path):
     dist_dir = tmp_path / "dist"
     env = dict(os.environ)
     env["XTILE_DIST_DIR"] = str(dist_dir)
+    env["XTILE_PYTHON_BIN"] = sys.executable
 
     subprocess.run(
         [str(SCRIPT_PATH)],
