@@ -1,0 +1,359 @@
+from __future__ import annotations
+
+import ast
+from collections.abc import Sequence
+from dataclasses import dataclass
+import inspect
+import textwrap
+
+from .errors import XTConversionError
+from .types import MemRefSpec, TensorSpec
+
+
+@dataclass(frozen=True)
+class IntExpr:
+    kind: str
+    value: int
+    name: str | None = None
+
+
+@dataclass(frozen=True)
+class ConstOp:
+    name: str
+    value: int
+
+
+@dataclass(frozen=True)
+class LoadOp:
+    name: str
+    source: str
+    indices: tuple[IntExpr, ...]
+    shape: tuple[int, ...]
+    shared: int | None
+    result: TensorSpec
+
+
+@dataclass(frozen=True)
+class BinaryOp:
+    name: str
+    op_name: str
+    lhs: str
+    rhs: str
+    result: TensorSpec
+
+
+@dataclass(frozen=True)
+class UnaryOp:
+    name: str
+    op_name: str
+    operand: str
+    result: TensorSpec
+
+
+@dataclass(frozen=True)
+class ReshapeOp:
+    name: str
+    operand: str
+    shape: tuple[int, ...]
+    result: TensorSpec
+
+
+@dataclass(frozen=True)
+class TransposeOp:
+    name: str
+    operand: str
+    order: tuple[int, ...]
+    result: TensorSpec
+
+
+@dataclass(frozen=True)
+class StoreOp:
+    dest: str
+    indices: tuple[IntExpr, ...]
+    tile: str
+
+
+@dataclass(frozen=True)
+class KernelArg:
+    name: str
+    memref: MemRefSpec
+
+
+@dataclass(frozen=True)
+class KernelGraph:
+    name: str
+    args: tuple[KernelArg, ...]
+    ops: tuple[object, ...]
+    uses_block_ids: bool
+
+
+@dataclass(frozen=True)
+class _MemRefValue:
+    spec: MemRefSpec
+
+
+@dataclass(frozen=True)
+class _IntValue:
+    expr: IntExpr
+
+
+@dataclass(frozen=True)
+class _TileValue:
+    spec: TensorSpec
+
+
+_UNARY_OPS = {"exp"}
+
+
+def parse_kernel(fn: object) -> KernelGraph:
+    if not getattr(fn, "__xt_kernel__", False):
+        raise XTConversionError("xt.convert(...) expects a function decorated with @xt.kernel")
+
+    try:
+        source = textwrap.dedent(inspect.getsource(fn))
+    except OSError as exc:
+        raise XTConversionError(
+            "xt.convert(...) requires a kernel defined in a real Python source file"
+        ) from exc
+    module = ast.parse(source)
+    func_def = next(
+        (node for node in module.body if isinstance(node, ast.FunctionDef)),
+        None,
+    )
+    if func_def is None:
+        raise XTConversionError("failed to locate function definition")
+
+    signature = inspect.signature(fn)
+    args: list[KernelArg] = []
+    env: dict[str, object] = {}
+    for name, param in signature.parameters.items():
+        spec = MemRefSpec.parse(param.annotation)
+        args.append(KernelArg(name=name, memref=spec))
+        env[name] = _MemRefValue(spec)
+
+    ops: list[object] = []
+    uses_block_ids = False
+    for stmt in func_def.body:
+        if isinstance(stmt, ast.Assign):
+            if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
+                raise XTConversionError("only single-name assignments are supported")
+            name = stmt.targets[0].id
+            value = stmt.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, int):
+                expr = IntExpr(kind="const", value=value.value, name=name)
+                env[name] = _IntValue(expr)
+                ops.append(ConstOp(name=name, value=value.value))
+                continue
+            if _is_xt_call(value, "bid"):
+                dim = _extract_int(value.args[0], env)
+                env[name] = _IntValue(IntExpr(kind="bid", value=dim, name=name))
+                uses_block_ids = True
+                continue
+            if _is_xt_call(value, "load"):
+                load_op = _parse_load(name, value, env)
+                env[name] = _TileValue(load_op.result)
+                uses_block_ids |= any(expr.kind == "bid" for expr in load_op.indices)
+                ops.append(load_op)
+                continue
+            if isinstance(value, ast.BinOp):
+                binary_op = _parse_binop(name, value, env)
+                env[name] = _TileValue(binary_op.result)
+                ops.append(binary_op)
+                continue
+            if isinstance(value, ast.Call):
+                op = _parse_call_assignment(name, value, env)
+                env[name] = _TileValue(op.result)
+                ops.append(op)
+                continue
+            raise XTConversionError(f"unsupported assignment for '{name}'")
+
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            if _is_xt_call(stmt.value, "store"):
+                store_op = _parse_store(stmt.value, env)
+                uses_block_ids |= any(expr.kind == "bid" for expr in store_op.indices)
+                ops.append(store_op)
+                continue
+        raise XTConversionError(
+            f"unsupported statement: {ast.dump(stmt, include_attributes=False)}"
+        )
+
+    return KernelGraph(
+        name=func_def.name,
+        args=tuple(args),
+        ops=tuple(ops),
+        uses_block_ids=uses_block_ids,
+    )
+
+
+def _parse_load(name: str, node: ast.Call, env: dict[str, object]) -> LoadOp:
+    source = _expect_name(node.args[0], "xt.load source")
+    source_value = _expect_memref(env, source)
+    index_expr = _require_keyword(node, "index")
+    shape_expr = _require_keyword(node, "shape")
+    shared_node = _optional_keyword(node, "shared")
+    indices = _extract_index_tuple(index_expr, env)
+    shape = _extract_shape_tuple(shape_expr, env)
+    shared = _extract_int(shared_node, env) if shared_node is not None else None
+    return LoadOp(
+        name=name,
+        source=source,
+        indices=indices,
+        shape=shape,
+        shared=shared,
+        result=TensorSpec(shape=shape, element_type=source_value.spec.element_type),
+    )
+
+
+def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> BinaryOp:
+    lhs_name = _expect_name(node.left, "binary lhs")
+    rhs_name = _expect_name(node.right, "binary rhs")
+    lhs = _expect_tile(env, lhs_name)
+    rhs = _expect_tile(env, rhs_name)
+    if lhs.spec != rhs.spec:
+        raise XTConversionError(f"binary op shape/type mismatch: {lhs.spec} vs {rhs.spec}")
+
+    op_map = {
+        ast.Add: "add",
+        ast.Sub: "sub",
+        ast.Mult: "mul",
+    }
+    for ast_type, op_name in op_map.items():
+        if isinstance(node.op, ast_type):
+            return BinaryOp(
+                name=name,
+                op_name=op_name,
+                lhs=lhs_name,
+                rhs=rhs_name,
+                result=lhs.spec,
+            )
+    raise XTConversionError(f"unsupported binary operator: {ast.dump(node.op)}")
+
+
+def _parse_call_assignment(name: str, node: ast.Call, env: dict[str, object]) -> object:
+    if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+        if node.func.value.id != "xt":
+            raise XTConversionError("only xt.* calls are supported")
+        op_name = node.func.attr
+        if op_name in _UNARY_OPS:
+            operand_name = _expect_name(node.args[0], f"xt.{op_name} operand")
+            operand = _expect_tile(env, operand_name)
+            return UnaryOp(
+                name=name,
+                op_name=op_name,
+                operand=operand_name,
+                result=operand.spec,
+            )
+        if op_name == "reshape":
+            operand_name = _expect_name(node.args[0], "xt.reshape operand")
+            operand = _expect_tile(env, operand_name)
+            shape = _extract_shape_tuple(_require_keyword(node, "shape"), env)
+            return ReshapeOp(
+                name=name,
+                operand=operand_name,
+                shape=shape,
+                result=operand.spec.reshape(shape),
+            )
+        if op_name == "transpose":
+            operand_name = _expect_name(node.args[0], "xt.transpose operand")
+            operand = _expect_tile(env, operand_name)
+            order_node = _optional_keyword(node, "order")
+            if order_node is None:
+                rank = len(operand.spec.shape)
+                if rank < 2:
+                    raise XTConversionError("transpose requires rank >= 2")
+                order = tuple(range(rank - 2)) + (rank - 1, rank - 2)
+            else:
+                order = _extract_shape_tuple(order_node, env)
+            return TransposeOp(
+                name=name,
+                operand=operand_name,
+                order=order,
+                result=operand.spec.transpose(order),
+            )
+    raise XTConversionError(
+        f"unsupported xt call: {ast.dump(node, include_attributes=False)}"
+    )
+
+
+def _parse_store(node: ast.Call, env: dict[str, object]) -> StoreOp:
+    dest = _expect_name(node.args[0], "xt.store destination")
+    _expect_memref(env, dest)
+    tile_name = _expect_name(_require_keyword(node, "tile"), "xt.store tile")
+    _expect_tile(env, tile_name)
+    indices = _extract_index_tuple(_require_keyword(node, "index"), env)
+    return StoreOp(dest=dest, indices=indices, tile=tile_name)
+
+
+def _extract_index_tuple(node: ast.AST, env: dict[str, object]) -> tuple[IntExpr, ...]:
+    if not isinstance(node, ast.Tuple):
+        raise XTConversionError("index= must be a tuple")
+    return tuple(_extract_int_expr(elt, env) for elt in node.elts)
+
+
+def _extract_shape_tuple(node: ast.AST, env: dict[str, object]) -> tuple[int, ...]:
+    if not isinstance(node, ast.Tuple):
+        raise XTConversionError("shape/order= must be a tuple")
+    return tuple(_extract_int(elt, env) for elt in node.elts)
+
+
+def _extract_int_expr(node: ast.AST, env: dict[str, object]) -> IntExpr:
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return IntExpr(kind="const", value=node.value)
+    if isinstance(node, ast.Name):
+        value = env.get(node.id)
+        if isinstance(value, _IntValue):
+            return value.expr
+    if _is_xt_call(node, "bid"):
+        return IntExpr(kind="bid", value=_extract_int(node.args[0], env))
+    raise XTConversionError(f"expected integer or xt.bid(...), got {ast.dump(node)}")
+
+
+def _extract_int(node: ast.AST | None, env: dict[str, object]) -> int:
+    if node is None:
+        raise XTConversionError("expected integer value")
+    expr = _extract_int_expr(node, env)
+    return expr.value
+
+
+def _expect_name(node: ast.AST, label: str) -> str:
+    if not isinstance(node, ast.Name):
+        raise XTConversionError(f"{label} must be a variable name")
+    return node.id
+
+
+def _expect_memref(env: dict[str, object], name: str) -> _MemRefValue:
+    value = env.get(name)
+    if not isinstance(value, _MemRefValue):
+        raise XTConversionError(f"'{name}' is not a memref value")
+    return value
+
+
+def _expect_tile(env: dict[str, object], name: str) -> _TileValue:
+    value = env.get(name)
+    if not isinstance(value, _TileValue):
+        raise XTConversionError(f"'{name}' is not a tile value")
+    return value
+
+
+def _is_xt_call(node: ast.AST, attr: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "xt"
+        and node.func.attr == attr
+    )
+
+
+def _require_keyword(node: ast.Call, name: str) -> ast.AST:
+    value = _optional_keyword(node, name)
+    if value is None:
+        raise XTConversionError(f"missing required keyword argument: {name}")
+    return value
+
+
+def _optional_keyword(node: ast.Call, name: str) -> ast.AST | None:
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            return keyword.value
+    return None
