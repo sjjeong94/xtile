@@ -1,15 +1,3 @@
-import sys
-
-MLIR_PYTHON_ROOT = (
-    "/home/sjjeong94/projects/llvm-project/build/tools/mlir/python_packages/mlir_core"
-)
-if MLIR_PYTHON_ROOT not in sys.path:
-    sys.path.insert(0, MLIR_PYTHON_ROOT)
-
-PYTHON_ROOT = "/home/sjjeong94/projects/xt/.worktrees/python-dsl/python"
-if PYTHON_ROOT not in sys.path:
-    sys.path.insert(0, PYTHON_ROOT)
-
 import xtile as xt
 
 
