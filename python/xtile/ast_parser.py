@@ -43,6 +43,14 @@ class BinaryOp:
 
 
 @dataclass(frozen=True)
+class MatmulOp:
+    name: str
+    lhs: str
+    rhs: str
+    result: TensorSpec
+
+
+@dataclass(frozen=True)
 class UnaryOp:
     name: str
     op_name: str
@@ -102,7 +110,23 @@ class _TileValue:
     spec: TensorSpec
 
 
-_UNARY_OPS = {"exp"}
+_UNARY_OPS = {
+    "cos",
+    "exp",
+    "reduce_max",
+    "reduce_sum",
+    "reciprocal",
+    "rsqrt",
+    "sigmoid",
+    "silu",
+    "sin",
+    "tanh",
+}
+
+_UNARY_ALIASES = {
+    "max": "reduce_max",
+    "sum": "reduce_sum",
+}
 
 
 def parse_kernel(fn: object) -> KernelGraph:
@@ -135,10 +159,17 @@ def parse_kernel(fn: object) -> KernelGraph:
     uses_block_ids = False
     for stmt in func_def.body:
         if isinstance(stmt, ast.Assign):
-            if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
-                raise XTConversionError("only single-name assignments are supported")
-            name = stmt.targets[0].id
+            if len(stmt.targets) != 1:
+                raise XTConversionError("only single-target assignments are supported")
+            target = stmt.targets[0]
             value = stmt.value
+            if isinstance(target, ast.Tuple):
+                tuple_ops = _parse_tuple_assign(target, value, env)
+                ops.extend(tuple_ops)
+                continue
+            if not isinstance(target, ast.Name):
+                raise XTConversionError("only single-name assignments are supported")
+            name = target.id
             if isinstance(value, ast.Constant) and isinstance(value.value, int):
                 expr = IntExpr(kind="const", value=value.value, name=name)
                 env[name] = _IntValue(expr)
@@ -204,13 +235,31 @@ def _parse_load(name: str, node: ast.Call, env: dict[str, object]) -> LoadOp:
     )
 
 
+def _parse_tuple_assign(
+    target: ast.Tuple, node: ast.AST, env: dict[str, object]
+) -> list[ConstOp]:
+    if not isinstance(node, ast.Tuple):
+        raise XTConversionError("tuple assignment requires a tuple value")
+    if len(target.elts) != len(node.elts):
+        raise XTConversionError("tuple assignment target/value length mismatch")
+
+    ops: list[ConstOp] = []
+    for target_elt, value_elt in zip(target.elts, node.elts, strict=True):
+        if not isinstance(target_elt, ast.Name):
+            raise XTConversionError("tuple assignment targets must be variable names")
+        if not isinstance(value_elt, ast.Constant) or not isinstance(value_elt.value, int):
+            raise XTConversionError("tuple assignment only supports integer constants")
+        expr = IntExpr(kind="const", value=value_elt.value, name=target_elt.id)
+        env[target_elt.id] = _IntValue(expr)
+        ops.append(ConstOp(name=target_elt.id, value=value_elt.value))
+    return ops
+
+
 def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> BinaryOp:
     lhs_name = _expect_name(node.left, "binary lhs")
     rhs_name = _expect_name(node.right, "binary rhs")
     lhs = _expect_tile(env, lhs_name)
     rhs = _expect_tile(env, rhs_name)
-    if lhs.spec != rhs.spec:
-        raise XTConversionError(f"binary op shape/type mismatch: {lhs.spec} vs {rhs.spec}")
 
     op_map = {
         ast.Add: "add",
@@ -219,6 +268,10 @@ def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> BinaryOp
     }
     for ast_type, op_name in op_map.items():
         if isinstance(node.op, ast_type):
+            if lhs.spec != rhs.spec:
+                raise XTConversionError(
+                    f"binary op shape/type mismatch: {lhs.spec} vs {rhs.spec}"
+                )
             return BinaryOp(
                 name=name,
                 op_name=op_name,
@@ -226,7 +279,37 @@ def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> BinaryOp
                 rhs=rhs_name,
                 result=lhs.spec,
             )
+    if isinstance(node.op, ast.MatMult):
+        return _parse_matmul(name, lhs_name, rhs_name, lhs.spec, rhs.spec)
     raise XTConversionError(f"unsupported binary operator: {ast.dump(node.op)}")
+
+
+def _parse_matmul(
+    name: str,
+    lhs_name: str,
+    rhs_name: str,
+    lhs: TensorSpec,
+    rhs: TensorSpec,
+) -> MatmulOp:
+    if len(lhs.shape) != 2 or len(rhs.shape) != 2:
+        raise XTConversionError("matmul requires rank-2 tensor operands")
+    if lhs.element_type != rhs.element_type:
+        raise XTConversionError(
+            f"matmul element type mismatch: {lhs.element_type} vs {rhs.element_type}"
+        )
+    if lhs.shape[1] != rhs.shape[0]:
+        raise XTConversionError(
+            "matmul requires lhs inner dimension to match rhs outer dimension"
+        )
+    return MatmulOp(
+        name=name,
+        lhs=lhs_name,
+        rhs=rhs_name,
+        result=TensorSpec(
+            shape=(lhs.shape[0], rhs.shape[1]),
+            element_type=lhs.element_type,
+        ),
+    )
 
 
 def _parse_call_assignment(name: str, node: ast.Call, env: dict[str, object]) -> object:
@@ -234,14 +317,20 @@ def _parse_call_assignment(name: str, node: ast.Call, env: dict[str, object]) ->
         if node.func.value.id != "xt":
             raise XTConversionError("only xt.* calls are supported")
         op_name = node.func.attr
+        op_name = _UNARY_ALIASES.get(op_name, op_name)
         if op_name in _UNARY_OPS:
             operand_name = _expect_name(node.args[0], f"xt.{op_name} operand")
             operand = _expect_tile(env, operand_name)
+            result = (
+                operand.spec.reduce_last_dim()
+                if op_name in {"reduce_sum", "reduce_max"}
+                else operand.spec
+            )
             return UnaryOp(
                 name=name,
                 op_name=op_name,
                 operand=operand_name,
-                result=operand.spec,
+                result=result,
             )
         if op_name == "reshape":
             operand_name = _expect_name(node.args[0], "xt.reshape operand")

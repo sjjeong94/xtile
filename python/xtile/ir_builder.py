@@ -8,6 +8,7 @@ from .ast_parser import (
     IntExpr,
     KernelGraph,
     LoadOp,
+    MatmulOp,
     ReshapeOp,
     StoreOp,
     TransposeOp,
@@ -84,6 +85,14 @@ def build_module(graph: KernelGraph) -> ir.Module:
                     if isinstance(op, BinaryOp):
                         tiles[op.name] = ir.Operation.create(
                             f"xt.{op.op_name}",
+                            operands=[tiles[op.lhs], tiles[op.rhs]],
+                            results=[op.result.to_mlir_type()],
+                        ).result
+                        continue
+
+                    if isinstance(op, MatmulOp):
+                        tiles[op.name] = ir.Operation.create(
+                            "xt.matmul",
                             operands=[tiles[op.lhs], tiles[op.rhs]],
                             results=[op.result.to_mlir_type()],
                         ).result

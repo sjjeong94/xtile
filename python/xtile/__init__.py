@@ -3,7 +3,24 @@ from __future__ import annotations
 from mlir import ir
 
 from .ast_parser import parse_kernel
-from .dsl import bid, exp, kernel, load, reshape, store, transpose
+from .dsl import (
+    bid,
+    cos,
+    exp,
+    kernel,
+    load,
+    max,
+    reciprocal,
+    reshape,
+    rsqrt,
+    sigmoid,
+    silu,
+    sin,
+    store,
+    sum,
+    tanh,
+    transpose,
+)
 from .ir_builder import build_module
 from .types import memref
 
@@ -18,13 +35,22 @@ def dump(module: ir.Module) -> str:
 
 __all__ = [
     "bid",
+    "cos",
     "convert",
     "dump",
     "exp",
     "kernel",
     "load",
+    "max",
     "memref",
+    "reciprocal",
     "reshape",
+    "rsqrt",
+    "sigmoid",
+    "silu",
+    "sin",
     "store",
+    "sum",
+    "tanh",
     "transpose",
 ]

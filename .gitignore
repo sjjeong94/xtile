@@ -5,3 +5,5 @@ __pycache__/
 .pytest_cache/
 .wheel-build/
 dist/
+*.egg-info/
+.vscode/

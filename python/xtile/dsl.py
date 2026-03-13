@@ -31,6 +31,42 @@ def exp(*args: object, **kwargs: object) -> object:
     raise XTError("xt.exp(...) is only valid during xt.convert(...)")
 
 
+def cos(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.cos(...) is only valid during xt.convert(...)")
+
+
+def sin(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.sin(...) is only valid during xt.convert(...)")
+
+
+def reciprocal(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.reciprocal(...) is only valid during xt.convert(...)")
+
+
+def rsqrt(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.rsqrt(...) is only valid during xt.convert(...)")
+
+
+def sigmoid(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.sigmoid(...) is only valid during xt.convert(...)")
+
+
+def tanh(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.tanh(...) is only valid during xt.convert(...)")
+
+
+def silu(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.silu(...) is only valid during xt.convert(...)")
+
+
+def sum(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.sum(...) is only valid during xt.convert(...)")
+
+
+def max(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.max(...) is only valid during xt.convert(...)")
+
+
 def reshape(*args: object, **kwargs: object) -> object:
     raise XTError("xt.reshape(...) is only valid during xt.convert(...)")
 
@@ -41,11 +77,20 @@ def transpose(*args: object, **kwargs: object) -> object:
 
 __all__ = [
     "bid",
+    "cos",
     "exp",
     "kernel",
     "load",
+    "max",
     "memref",
+    "reciprocal",
     "reshape",
+    "rsqrt",
+    "sigmoid",
+    "silu",
+    "sin",
     "store",
+    "sum",
+    "tanh",
     "transpose",
 ]

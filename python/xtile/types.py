@@ -98,6 +98,14 @@ class TensorSpec:
             element_type=self.element_type,
         )
 
+    def reduce_last_dim(self) -> "TensorSpec":
+        if not self.shape:
+            raise XTConversionError("reduce requires rank-1 or higher tensors")
+        return TensorSpec(
+            shape=(*self.shape[:-1], 1),
+            element_type=self.element_type,
+        )
+
 
 def _element_count(shape: tuple[int, ...]) -> int:
     count = 1
