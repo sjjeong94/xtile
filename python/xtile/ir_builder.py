@@ -5,6 +5,7 @@ from mlir import ir
 from .ast_parser import (
     BinaryOp,
     ConstOp,
+    FullOp,
     IntExpr,
     KernelGraph,
     LoadOp,
@@ -103,6 +104,19 @@ def build_module(graph: KernelGraph) -> ir.Module:
                             f"xt.{op.op_name}",
                             operands=[tiles[op.operand]],
                             results=[op.result.to_mlir_type()],
+                        ).result
+                        continue
+
+                    if isinstance(op, FullOp):
+                        tensor_type = op.result.to_mlir_type()
+                        value_text = format(op.value, ".6e")
+                        value_attr = ir.Attribute.parse(
+                            f"dense<{value_text}> : {tensor_type}"
+                        )
+                        tiles[op.name] = ir.Operation.create(
+                            "arith.constant",
+                            results=[tensor_type],
+                            attributes={"value": value_attr},
                         ).result
                         continue
 

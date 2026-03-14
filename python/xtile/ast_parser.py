@@ -59,6 +59,14 @@ class UnaryOp:
 
 
 @dataclass(frozen=True)
+class FullOp:
+    name: str
+    shape: tuple[int, ...]
+    value: float
+    result: TensorSpec
+
+
+@dataclass(frozen=True)
 class ReshapeOp:
     name: str
     operand: str
@@ -268,16 +276,13 @@ def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> BinaryOp
     }
     for ast_type, op_name in op_map.items():
         if isinstance(node.op, ast_type):
-            if lhs.spec != rhs.spec:
-                raise XTConversionError(
-                    f"binary op shape/type mismatch: {lhs.spec} vs {rhs.spec}"
-                )
+            result = lhs.spec.broadcast_with(rhs.spec)
             return BinaryOp(
                 name=name,
                 op_name=op_name,
                 lhs=lhs_name,
                 rhs=rhs_name,
-                result=lhs.spec,
+                result=result,
             )
     if isinstance(node.op, ast.MatMult):
         return _parse_matmul(name, lhs_name, rhs_name, lhs.spec, rhs.spec)
@@ -359,6 +364,15 @@ def _parse_call_assignment(name: str, node: ast.Call, env: dict[str, object]) ->
                 order=order,
                 result=operand.spec.transpose(order),
             )
+        if op_name == "full":
+            shape = _extract_shape_tuple(_require_keyword(node, "shape"), env)
+            value = _extract_float(_require_keyword(node, "value"))
+            return FullOp(
+                name=name,
+                shape=shape,
+                value=value,
+                result=TensorSpec(shape=shape, element_type="f32"),
+            )
     raise XTConversionError(
         f"unsupported xt call: {ast.dump(node, include_attributes=False)}"
     )
@@ -402,6 +416,12 @@ def _extract_int(node: ast.AST | None, env: dict[str, object]) -> int:
         raise XTConversionError("expected integer value")
     expr = _extract_int_expr(node, env)
     return expr.value
+
+
+def _extract_float(node: ast.AST) -> float:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return float(node.value)
+    raise XTConversionError(f"expected float constant, got {ast.dump(node)}")
 
 
 def _expect_name(node: ast.AST, label: str) -> str:

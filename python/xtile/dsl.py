@@ -75,10 +75,15 @@ def transpose(*args: object, **kwargs: object) -> object:
     raise XTError("xt.transpose(...) is only valid during xt.convert(...)")
 
 
+def full(*args: object, **kwargs: object) -> object:
+    raise XTError("xt.full(...) is only valid during xt.convert(...)")
+
+
 __all__ = [
     "bid",
     "cos",
     "exp",
+    "full",
     "kernel",
     "load",
     "max",

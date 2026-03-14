@@ -1,7 +1,12 @@
 import xtile as xt
 
 from mlir import ir
+import os
+from pathlib import Path
 import pytest
+import subprocess
+import sys
+from kernels.softmax import softmax_kernel
 
 from xtile.errors import XTConversionError
 
@@ -197,6 +202,28 @@ def test_convert_supported_reduce_kernels(op_name: str, kernel: object):
 
 
 @xt.kernel
+def broadcast_sub_kernel(
+    a: xt.memref("?xf32"),
+    result: xt.memref("?xf32"),
+):
+    block_id = xt.bid(0)
+    a_tile = xt.load(a, index=(block_id,), shape=(16, 16))
+    row_max = xt.max(a_tile)
+    shifted = a_tile - row_max
+    xt.store(result, index=(block_id,), tile=shifted)
+
+
+def test_convert_broadcast_binary_kernel():
+    module = xt.convert(broadcast_sub_kernel)
+    dumped = xt.dump(module)
+
+    assert "xt.reduce_max" in dumped
+    assert "xt.sub" in dumped
+    assert "tensor<16x16xf32>" in dumped
+    assert "tensor<16x1xf32>" in dumped
+
+
+@xt.kernel
 def reshape_transpose_kernel(
     a: xt.memref("?xf32"),
     result: xt.memref("?xf32"),
@@ -244,6 +271,175 @@ def test_convert_matmul_kernel():
     assert "xt.matmul" in dumped
     assert "xt.store" in dumped
     assert "tensor<64x64xf32>" in dumped
+
+
+def test_convert_matmul_kernel_example():
+    from kernels.matmul import matmul_kernel as example_matmul_kernel
+
+    module = xt.convert(example_matmul_kernel)
+    dumped = xt.dump(module)
+
+    assert "func.func @matmul_kernel" in dumped
+    assert dumped.count("xt.load") == 2
+    assert "xt.matmul" in dumped
+    assert "xt.store" in dumped
+    assert "tensor<64x64xf32>" in dumped
+
+
+def test_convert_softmax_kernel():
+    module = xt.convert(softmax_kernel)
+    dumped = xt.dump(module)
+
+    assert "func.func @softmax_kernel" in dumped
+    assert "xt.reduce_max" in dumped
+    assert "xt.sub" in dumped
+    assert "xt.exp" in dumped
+    assert "xt.reduce_sum" in dumped
+    assert "xt.reciprocal" in dumped
+    assert "xt.mul" in dumped
+    assert "tensor<16x16xf32>" in dumped
+    assert "tensor<16x1xf32>" in dumped
+
+
+@xt.kernel
+def constant_tensor_scale_kernel(
+    a: xt.memref("?xf32"),
+    result: xt.memref("?xf32"),
+):
+    block_id = xt.bid(0)
+    a_tile = xt.load(a, index=(block_id,), shape=(16, 16))
+    scale = xt.full(shape=(16, 16), value=0.5)
+    scaled = a_tile * scale
+    xt.store(result, index=(block_id,), tile=scaled)
+
+
+def test_convert_constant_tensor_kernel():
+    module = xt.convert(constant_tensor_scale_kernel)
+    dumped = xt.dump(module)
+
+    assert "arith.constant" in dumped
+    assert "dense<5.000000e-01>" in dumped
+    assert "xt.mul" in dumped
+    assert "tensor<16x16xf32>" in dumped
+
+
+def test_convert_layernorm_kernel():
+    from kernels.layernorm import layernorm_kernel
+
+    module = xt.convert(layernorm_kernel)
+    dumped = xt.dump(module)
+
+    assert "func.func @layernorm_kernel" in dumped
+    assert dumped.count("xt.reduce_sum") == 2
+    assert dumped.count("xt.mul") >= 3
+    assert "xt.sub" in dumped
+    assert "xt.rsqrt" in dumped
+    assert "arith.constant" in dumped
+    assert "tensor<16x16xf32>" in dumped
+    assert "tensor<16x1xf32>" in dumped
+
+
+def _run_xtile_cli(
+    source_path: Path, *extra_args: str
+) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    python_root = "/home/sjjeong94/projects/xtile/python"
+    mlir_python_root = (
+        "/home/sjjeong94/projects/llvm-project/build/"
+        "tools/mlir/python_packages/mlir_core"
+    )
+    env["PYTHONPATH"] = os.pathsep.join([python_root, mlir_python_root])
+    return subprocess.run(
+        [sys.executable, "-m", "xtile", str(source_path), *extra_args],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_cli_prints_single_kernel_mlir(tmp_path: Path):
+    source_path = tmp_path / "single_kernel.py"
+    source_path.write_text(
+        """
+import xtile as xt
+
+@xt.kernel
+def only_kernel(a: xt.memref('?xf32'), result: xt.memref('?xf32')):
+    block_id = xt.bid(0)
+    tile = xt.load(a, index=(block_id,), shape=(16,))
+    xt.store(result, index=(block_id,), tile=tile)
+""".strip()
+        + "\n"
+    )
+
+    completed = _run_xtile_cli(source_path)
+
+    assert completed.returncode == 0
+    assert "func.func @only_kernel" in completed.stdout
+    assert completed.stderr == ""
+
+
+def test_cli_prints_all_kernels_in_source_order(tmp_path: Path):
+    source_path = tmp_path / "multiple_kernels.py"
+    source_path.write_text(
+        """
+import xtile as xt
+
+@xt.kernel
+def first_kernel(a: xt.memref('?xf32'), result: xt.memref('?xf32')):
+    block_id = xt.bid(0)
+    tile = xt.load(a, index=(block_id,), shape=(16,))
+    xt.store(result, index=(block_id,), tile=tile)
+
+@xt.kernel
+def second_kernel(a: xt.memref('?xf32'), result: xt.memref('?xf32')):
+    block_id = xt.bid(0)
+    tile = xt.load(a, index=(block_id,), shape=(16,))
+    shifted = xt.exp(tile)
+    xt.store(result, index=(block_id,), tile=shifted)
+""".strip()
+        + "\n"
+    )
+
+    completed = _run_xtile_cli(source_path)
+
+    assert completed.returncode == 0
+    assert completed.stdout.count("module {") == 2
+    assert completed.stdout.index("func.func @first_kernel") < completed.stdout.index(
+        "func.func @second_kernel"
+    )
+
+
+def test_cli_errors_when_file_has_no_kernels(tmp_path: Path):
+    source_path = tmp_path / "no_kernel.py"
+    source_path.write_text(
+        """
+def helper():
+    return 0
+""".strip()
+        + "\n"
+    )
+
+    completed = _run_xtile_cli(source_path)
+
+    assert completed.returncode != 0
+    assert completed.stdout == ""
+    assert "no @xt.kernel functions found" in completed.stderr
+
+
+def test_cli_canonicalize_prints_canonicalized_mlir():
+    source_path = Path("/home/sjjeong94/projects/xtile/python/kernels/matmul.py")
+
+    raw = _run_xtile_cli(source_path)
+    canonicalized = _run_xtile_cli(source_path, "--canonicalize")
+
+    assert raw.returncode == 0
+    assert canonicalized.returncode == 0
+    assert "%c64_i32 = arith.constant 64 : i32" in raw.stdout
+    assert "%c64_i32 = arith.constant 64 : i32" not in canonicalized.stdout
+    assert raw.stdout.count("arith.constant 0 : i32") == 2
+    assert canonicalized.stdout.count("arith.constant 0 : i32") == 1
 
 
 @xt.kernel

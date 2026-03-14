@@ -8,10 +8,13 @@ version = "0.1.0"
 description = "Python DSL for xTile MLIR kernels"
 requires-python = ">=3.10"
 
+[project.scripts]
+xtile = "xtile.__main__:main"
+
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["xtile", "xtile.*", "mlir", "mlir.*"]
+include = ["xtile", "xtile.*", "mlir", "mlir.*", "kernels", "kernels.*"]
 namespaces = true

@@ -26,6 +26,7 @@ require_path() {
 
 require_path "$PYTHON_BIN"
 require_path "$REPO_ROOT/python/xtile"
+require_path "$REPO_ROOT/python/kernels"
 require_path "$REPO_ROOT/pyproject.toml"
 require_path "$REPO_ROOT/MANIFEST.in"
 require_path "$REPO_ROOT/setup.py"
@@ -41,6 +42,7 @@ cp "$REPO_ROOT/pyproject.toml" "$STAGING_DIR/pyproject.toml"
 cp "$REPO_ROOT/MANIFEST.in" "$STAGING_DIR/MANIFEST.in"
 cp "$REPO_ROOT/setup.py" "$STAGING_DIR/setup.py"
 cp -R "$REPO_ROOT/python/xtile" "$STAGING_DIR/xtile"
+cp -R "$REPO_ROOT/python/kernels" "$STAGING_DIR/kernels"
 cp -R "$MLIR_ROOT/mlir" "$STAGING_DIR/mlir"
 
 if [[ ! -f "$STAGING_DIR/mlir/__init__.py" ]]; then

@@ -77,6 +77,33 @@ class TensorSpec:
     def to_mlir_type(self) -> ir.RankedTensorType:
         return ir.RankedTensorType.get(self.shape, _build_element_type(self.element_type))
 
+    def broadcast_with(self, other: "TensorSpec") -> "TensorSpec":
+        if self.element_type != other.element_type:
+            raise XTConversionError(
+                f"broadcast element type mismatch: {self.element_type} vs {other.element_type}"
+            )
+        if len(self.shape) != len(other.shape):
+            raise XTConversionError(
+                f"broadcast rank mismatch: {self.shape} vs {other.shape}"
+            )
+
+        result_shape: list[int] = []
+        for lhs_dim, rhs_dim in zip(self.shape, other.shape, strict=True):
+            if lhs_dim == rhs_dim:
+                result_shape.append(lhs_dim)
+                continue
+            if lhs_dim == 1:
+                result_shape.append(rhs_dim)
+                continue
+            if rhs_dim == 1:
+                result_shape.append(lhs_dim)
+                continue
+            raise XTConversionError(
+                f"broadcast shape mismatch: {self.shape} vs {other.shape}"
+            )
+
+        return TensorSpec(shape=tuple(result_shape), element_type=self.element_type)
+
     def reshape(self, shape: tuple[int, ...]) -> "TensorSpec":
         src_elems = _element_count(self.shape)
         dst_elems = _element_count(shape)

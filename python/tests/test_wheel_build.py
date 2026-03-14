@@ -104,3 +104,66 @@ print('ok')
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join([str(tmp_path / "site"), str(tmp_path)])
     subprocess.run([sys.executable, str(script_path)], env=env, check=True)
+
+
+def test_built_wheel_installs_xtile_console_script(tmp_path: Path):
+    dist_dir = tmp_path / "dist"
+    env = dict(os.environ)
+    env["XTILE_DIST_DIR"] = str(dist_dir)
+    env["XTILE_PYTHON_BIN"] = sys.executable
+
+    subprocess.run(
+        [str(SCRIPT_PATH)],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+    )
+
+    wheel = next(dist_dir.glob("*.whl"))
+    prefix_dir = tmp_path / "prefix"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--force-reinstall",
+            "--ignore-installed",
+            "--prefix",
+            str(prefix_dir),
+            str(wheel),
+        ],
+        check=True,
+    )
+
+    script_dir = prefix_dir / ("Scripts" if os.name == "nt" else "bin")
+    script_path = script_dir / ("xtile.exe" if os.name == "nt" else "xtile")
+    kernel_path = tmp_path / "cli_kernel.py"
+    kernel_path.write_text(
+        """
+import xtile as xt
+
+@xt.kernel
+def sample_kernel(a: xt.memref('?xf32'), result: xt.memref('?xf32')):
+    block_id = xt.bid(0)
+    tile = xt.load(a, index=(block_id,), shape=(16,))
+    xt.store(result, index=(block_id,), tile=tile)
+""".strip()
+        + "\n"
+    )
+
+    assert script_path.exists()
+
+    env = dict(os.environ)
+    site_packages = next(prefix_dir.glob("lib/python*/site-packages"))
+    env["PYTHONPATH"] = str(site_packages)
+    completed = subprocess.run(
+        [str(script_path), str(kernel_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.returncode == 0
+    assert "func.func @sample_kernel" in completed.stdout
