@@ -16,6 +16,17 @@ module {
     %0 = "xt.mul"(%a, %b) : (tensor<16x16xf32>, tensor<16x16xf32>) -> tensor<16x16xf32>
     return %0 : tensor<16x16xf32>
   }
+
+  func.func @scalar_like_mul(%a: tensor<16x1xf32>, %b: tensor<1x1xf32>) -> tensor<16x1xf32> {
+    %0 = "xt.mul"(%a, %b) : (tensor<16x1xf32>, tensor<1x1xf32>) -> tensor<16x1xf32>
+    return %0 : tensor<16x1xf32>
+  }
+
+  func.func @constant_scalar_mul(%a: tensor<16x16xf32>) -> tensor<16x16xf32> {
+    %cst = arith.constant dense<1.250000e-01> : tensor<1x1xf32>
+    %0 = "xt.mul"(%a, %cst) : (tensor<16x16xf32>, tensor<1x1xf32>) -> tensor<16x16xf32>
+    return %0 : tensor<16x16xf32>
+  }
 }
 
 // CHECK-LABEL: func.func @reduce_ops
@@ -25,15 +36,22 @@ module {
 // CHECK-SAME: mode = 1 : i32
 // CHECK-LABEL: func.func @broadcast_sub
 // CHECK: "nova.broadcast"(%arg0, %arg1)
-// CHECK-SAME: mode = 3 : i32
-// CHECK-SAME: lhs_s = 1.000000e+00 : f32
 // CHECK-SAME: lhs_b = 0.000000e+00 : f32
-// CHECK-SAME: rhs_s = 1.000000e+00 : f32
+// CHECK-SAME: lhs_s = 1.000000e+00 : f32
+// CHECK-SAME: mode = 3 : i32
 // CHECK-SAME: rhs_b = 0.000000e+00 : f32
+// CHECK-SAME: rhs_s = 1.000000e+00 : f32
 // CHECK-LABEL: func.func @elementwise_mul
 // CHECK: "nova.elementwise"(%arg0, %arg1)
-// CHECK-SAME: mode = 2 : i32
-// CHECK-SAME: lhs_s = 1.000000e+00 : f32
 // CHECK-SAME: lhs_b = 0.000000e+00 : f32
-// CHECK-SAME: rhs_s = 1.000000e+00 : f32
+// CHECK-SAME: lhs_s = 1.000000e+00 : f32
+// CHECK-SAME: mode = 2 : i32
 // CHECK-SAME: rhs_b = 0.000000e+00 : f32
+// CHECK-SAME: rhs_s = 1.000000e+00 : f32
+// CHECK-LABEL: func.func @scalar_like_mul
+// CHECK: xt.mul(%arg0, %arg1) : (tensor<16x1xf32>, tensor<1x1xf32>) -> tensor<16x1xf32>
+// CHECK-LABEL: func.func @constant_scalar_mul
+// CHECK: "nova.scalar"(%arg0)
+// CHECK-SAME: mode = 2 : i32
+// CHECK-SAME: rhs = 1.250000e-01 : f32
+// CHECK: : (tensor<16x16xf32>) -> tensor<16x16xf32>

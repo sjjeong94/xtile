@@ -258,6 +258,21 @@ def test_convert_then_to_nova_elementwise_kernel():
     assert "xt.mul" not in dumped
 
 
+def test_convert_then_to_nova_skips_scalar_like_broadcast():
+    from kernels.layernorm import layernorm_kernel
+
+    module = xt.convert(layernorm_kernel)
+    module = xt.to_nova(module)
+    dumped = xt.dump(module)
+
+    assert "nova.reduce" in dumped
+    assert dumped.count("nova.scalar") == 2
+    assert "mode = 2 : i32" in dumped
+    assert "rhs = 6.250000e-02 : f32" in dumped
+    assert '"xt.mul"(%2, %cst)' not in dumped
+    assert '"xt.mul"(%6, %cst_0)' not in dumped
+
+
 @xt.kernel
 def reshape_transpose_kernel(
     a: xt.memref("?xf32"),
@@ -370,6 +385,8 @@ def test_convert_layernorm_kernel():
     assert "xt.sub" in dumped
     assert "xt.rsqrt" in dumped
     assert "arith.constant" in dumped
+    assert "6.250000e-02" in dumped
+    assert "tensor<1x1xf32>" in dumped
     assert "tensor<16x16xf32>" in dumped
     assert "tensor<16x1xf32>" in dumped
 

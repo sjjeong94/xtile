@@ -114,6 +114,11 @@ class _IntValue:
 
 
 @dataclass(frozen=True)
+class _FloatValue:
+    value: float
+
+
+@dataclass(frozen=True)
 class _TileValue:
     spec: TensorSpec
 
@@ -183,6 +188,9 @@ def parse_kernel(fn: object) -> KernelGraph:
                 env[name] = _IntValue(expr)
                 ops.append(ConstOp(name=name, value=value.value))
                 continue
+            if isinstance(value, ast.Constant) and isinstance(value.value, float):
+                env[name] = _FloatValue(float(value.value))
+                continue
             if _is_xt_call(value, "bid"):
                 dim = _extract_int(value.args[0], env)
                 env[name] = _IntValue(IntExpr(kind="bid", value=dim, name=name))
@@ -196,8 +204,13 @@ def parse_kernel(fn: object) -> KernelGraph:
                 continue
             if isinstance(value, ast.BinOp):
                 binary_op = _parse_binop(name, value, env)
-                env[name] = _TileValue(binary_op.result)
-                ops.append(binary_op)
+                if isinstance(binary_op, list):
+                    final_op = binary_op[-1]
+                    env[name] = _TileValue(final_op.result)
+                    ops.extend(binary_op)
+                else:
+                    env[name] = _TileValue(binary_op.result)
+                    ops.append(binary_op)
                 continue
             if isinstance(value, ast.Call):
                 op = _parse_call_assignment(name, value, env)
@@ -263,11 +276,18 @@ def _parse_tuple_assign(
     return ops
 
 
-def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> BinaryOp:
+def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> object:
     lhs_name = _expect_name(node.left, "binary lhs")
     rhs_name = _expect_name(node.right, "binary rhs")
-    lhs = _expect_tile(env, lhs_name)
-    rhs = _expect_tile(env, rhs_name)
+    lhs_value = env.get(lhs_name)
+    rhs_value = env.get(rhs_name)
+
+    lhs_name, lhs_value, rhs_name, rhs_value, promoted_ops = _promote_float_operands(
+        name, lhs_name, lhs_value, rhs_name, rhs_value
+    )
+
+    lhs = _expect_tile(env_from_pair(lhs_name, lhs_value), lhs_name)
+    rhs = _expect_tile(env_from_pair(rhs_name, rhs_value), rhs_name)
 
     op_map = {
         ast.Add: "add",
@@ -277,16 +297,67 @@ def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> BinaryOp
     for ast_type, op_name in op_map.items():
         if isinstance(node.op, ast_type):
             result = lhs.spec.broadcast_with(rhs.spec)
-            return BinaryOp(
+            binary_op = BinaryOp(
                 name=name,
                 op_name=op_name,
                 lhs=lhs_name,
                 rhs=rhs_name,
                 result=result,
             )
+            if promoted_ops:
+                return [*promoted_ops, binary_op]
+            return binary_op
     if isinstance(node.op, ast.MatMult):
         return _parse_matmul(name, lhs_name, rhs_name, lhs.spec, rhs.spec)
     raise XTConversionError(f"unsupported binary operator: {ast.dump(node.op)}")
+
+
+def _promote_float_operands(
+    name: str,
+    lhs_name: str,
+    lhs_value: object | None,
+    rhs_name: str,
+    rhs_value: object | None,
+) -> tuple[str, object | None, str, object | None, list[FullOp]]:
+    promoted: list[FullOp] = []
+
+    if isinstance(lhs_value, _FloatValue) and isinstance(rhs_value, _TileValue):
+        promoted_shape = (1,) * len(rhs_value.spec.shape)
+        promoted_name = f"{name}_lhs_scalar"
+        promoted_op = FullOp(
+            name=promoted_name,
+            shape=promoted_shape,
+            value=lhs_value.value,
+            result=TensorSpec(
+                shape=promoted_shape,
+                element_type=rhs_value.spec.element_type,
+            ),
+        )
+        lhs_name = promoted_name
+        lhs_value = _TileValue(promoted_op.result)
+        promoted.append(promoted_op)
+
+    if isinstance(rhs_value, _FloatValue) and isinstance(lhs_value, _TileValue):
+        promoted_shape = (1,) * len(lhs_value.spec.shape)
+        promoted_name = f"{name}_rhs_scalar"
+        promoted_op = FullOp(
+            name=promoted_name,
+            shape=promoted_shape,
+            value=rhs_value.value,
+            result=TensorSpec(
+                shape=promoted_shape,
+                element_type=lhs_value.spec.element_type,
+            ),
+        )
+        rhs_name = promoted_name
+        rhs_value = _TileValue(promoted_op.result)
+        promoted.append(promoted_op)
+
+    return lhs_name, lhs_value, rhs_name, rhs_value, promoted
+
+
+def env_from_pair(name: str, value: object | None) -> dict[str, object]:
+    return {} if value is None else {name: value}
 
 
 def _parse_matmul(

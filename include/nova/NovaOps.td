@@ -30,6 +30,12 @@ def Nova_ElementwiseOp : Nova_BinaryTensorOp<
 def Nova_BroadcastOp : Nova_BinaryTensorOp<
     "broadcast", "hardware tile broadcast binary op">;
 
+def Nova_ScalarOp : Nova_Op<"scalar", [Pure]> {
+  let summary = "hardware tile tensor-scalar binary op";
+  let arguments = (ins Nova_RankedTensor:$input, I32Attr:$mode, F32Attr:$rhs);
+  let results = (outs Nova_RankedTensor:$result);
+}
+
 def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {
   let summary = "hardware tile reduction op";
   let arguments = (ins Nova_RankedTensor:$input, I32Attr:$mode);

@@ -1,5 +1,6 @@
 #include "xt/XTPasses.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "nova/NovaDialect.h"
 #include "xt/XTOps.h"
@@ -25,6 +26,36 @@ static FloatAttr buildFloatAttr(MLIRContext *context, float value) {
   return FloatAttr::get(Float32Type::get(context), value);
 }
 
+static bool hasSingleElement(RankedTensorType type) {
+  if (!type || !type.hasStaticShape())
+    return false;
+
+  int64_t numElements = 1;
+  for (int64_t dim : type.getShape())
+    numElements *= dim;
+  return numElements == 1;
+}
+
+static FailureOr<float> extractConstantFloat(Value value) {
+  auto constant = value.getDefiningOp<arith::ConstantOp>();
+  if (!constant)
+    return failure();
+
+  Attribute attr = constant.getValue();
+  if (auto floatAttr = llvm::dyn_cast<FloatAttr>(attr))
+    return floatAttr.getValueAsDouble();
+
+  auto dense = llvm::dyn_cast<DenseElementsAttr>(attr);
+  if (!dense || !dense.isSplat())
+    return failure();
+
+  auto splat = dense.getSplatValue<Attribute>();
+  auto floatAttr = llvm::dyn_cast<FloatAttr>(splat);
+  if (!floatAttr)
+    return failure();
+  return floatAttr.getValueAsDouble();
+}
+
 template <typename OpTy>
 struct BinaryOpToNovaPattern : OpRewritePattern<OpTy> {
   using OpRewritePattern<OpTy>::OpRewritePattern;
@@ -35,6 +66,22 @@ struct BinaryOpToNovaPattern : OpRewritePattern<OpTy> {
     auto rhsType = dyn_cast<RankedTensorType>(op.getRhs().getType());
     auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
     if (!lhsType || !rhsType || !resultType)
+      return failure();
+    FailureOr<float> rhsConstant = extractConstantFloat(op.getRhs());
+    if (succeeded(rhsConstant)) {
+      OperationState state(op.getLoc(), "nova.scalar");
+      state.addOperands(op.getLhs());
+      state.addTypes(resultType);
+      state.addAttribute("mode",
+                         buildModeAttr(rewriter.getContext(), getMode()));
+      state.addAttribute(
+          "rhs", buildFloatAttr(rewriter.getContext(), *rhsConstant));
+
+      Operation *novaOp = rewriter.create(state);
+      rewriter.replaceOp(op, novaOp->getResults());
+      return success();
+    }
+    if (hasSingleElement(lhsType) || hasSingleElement(rhsType))
       return failure();
 
     bool isElementwise = lhsType == resultType && rhsType == resultType;
