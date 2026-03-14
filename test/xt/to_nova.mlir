@@ -60,7 +60,7 @@ module {
 // CHECK-SAME: rhs_b = 0.000000e+00 : f32
 // CHECK-SAME: rhs_s = 1.000000e+00 : f32
 // CHECK-LABEL: func.func @scalar_like_mul
-// CHECK: xt.mul(%arg0, %arg1) : (tensor<16x1xf32>, tensor<1x1xf32>) -> tensor<16x1xf32>
+// CHECK: "xt.mul"(%arg0, %arg1) : (tensor<16x1xf32>, tensor<1x1xf32>) -> tensor<16x1xf32>
 // CHECK-LABEL: func.func @constant_scalar_mul
 // CHECK: "nova.scalar"(%arg0)
 // CHECK-SAME: mode = 2 : i32

@@ -1,7 +1,6 @@
 add_mlir_dialect_library(MLIRXT
   XTDialect.cpp
   XTOps.cpp
-  XTLowerToLoops.cpp
   XTToNova.cpp
 
   ADDITIONAL_HEADER_DIRS

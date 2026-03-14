@@ -7,7 +7,6 @@
 
 namespace mlir::xt {
 
-std::unique_ptr<Pass> createXTLowerToLoopsPass();
 std::unique_ptr<Pass> createXTToNovaPass();
 
 #define GEN_PASS_DECL

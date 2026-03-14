@@ -15,7 +15,6 @@ class XT_Op<string mnemonic, list<Trait> traits = []> :
 def XT_GetTileBlockIdOp : XT_Op<"get_tile_block_id", [Pure]> {
   let summary = "query the current tile block id";
   let results = (outs I32:$x, I32:$y, I32:$z);
-  let hasCustomAssemblyFormat = 1;
 }
 
 def XT_LoadOp : XT_Op<"load"> {
@@ -24,7 +23,6 @@ def XT_LoadOp : XT_Op<"load"> {
                        Variadic<XT_AnyCoord>:$coords,
                        OptionalAttr<I64Attr>:$shared);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -33,7 +31,6 @@ def XT_StoreOp : XT_Op<"store"> {
   let arguments = (ins XT_RankedTensor:$value,
                        XT_RankedMemRef:$dest,
                        Variadic<XT_AnyCoord>:$coords);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -41,7 +38,6 @@ def XT_AddOp : XT_Op<"add", [Pure]> {
   let summary = "elementwise tile add";
   let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
   let hasCanonicalizer = 1;
 }
@@ -50,7 +46,6 @@ def XT_SubOp : XT_Op<"sub", [Pure]> {
   let summary = "elementwise tile sub";
   let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
   let hasCanonicalizer = 1;
 }
@@ -59,7 +54,6 @@ def XT_MulOp : XT_Op<"mul", [Pure]> {
   let summary = "elementwise tile mul";
   let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -68,7 +62,6 @@ class XT_UnaryElementwiseOp<string mnemonic, string summaryText> :
   let summary = summaryText;
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -85,7 +78,6 @@ def XT_MatmulOp : XT_Op<"matmul", [Pure]> {
   let summary = "tile matrix multiply";
   let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -94,7 +86,6 @@ def XT_MMAOp : XT_Op<"mma", [Pure]> {
   let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs,
                        XT_RankedTensor:$acc);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -105,7 +96,6 @@ def XT_Conv2DOp : XT_Op<"conv2d", [Pure]> {
                        DenseI64ArrayAttr:$stride,
                        DenseI64ArrayAttr:$dilation);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -116,7 +106,6 @@ def XT_DepthwiseConv2DOp : XT_Op<"depthwise_conv2d", [Pure]> {
                        DenseI64ArrayAttr:$stride,
                        DenseI64ArrayAttr:$dilation);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -124,7 +113,6 @@ def XT_ReduceSumOp : XT_Op<"reduce_sum", [Pure]> {
   let summary = "reduce the last dimension by sum";
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -132,7 +120,6 @@ def XT_ReduceMaxOp : XT_Op<"reduce_max", [Pure]> {
   let summary = "reduce the last dimension by max";
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -140,7 +127,6 @@ def XT_ReshapeOp : XT_Op<"reshape", [Pure]> {
   let summary = "reshape a tensor tile";
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
@@ -148,7 +134,6 @@ def XT_TransposeOp : XT_Op<"transpose", [Pure]> {
   let summary = "transpose a rank-3 tensor tile by swapping the last two dimensions";
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
 
