@@ -23,7 +23,7 @@ from .dsl import (
     transpose,
 )
 from .ir_builder import build_module
-from .nova import to_nova
+from .nova import optimize_nova, to_nova
 from .types import memref
 
 
@@ -46,6 +46,7 @@ __all__ = [
     "load",
     "max",
     "memref",
+    "optimize_nova",
     "reciprocal",
     "reshape",
     "rsqrt",

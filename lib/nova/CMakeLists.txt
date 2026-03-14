@@ -1,5 +1,6 @@
 add_mlir_dialect_library(MLIRNova
   NovaDialect.cpp
+  NovaOptimize.cpp
   NovaOps.cpp
 
   ADDITIONAL_HEADER_DIRS
@@ -7,7 +8,11 @@ add_mlir_dialect_library(MLIRNova
 
   DEPENDS
   MLIRNovaOpsIncGen
+  MLIRNovaPassesIncGen
 
   LINK_LIBS PUBLIC
+  MLIRFuncDialect
   MLIRIR
+  MLIRPass
+  MLIRTransforms
 )

@@ -274,6 +274,29 @@ def test_convert_then_to_nova_skips_scalar_like_broadcast():
 
 
 @xt.kernel
+def constant_tensor_sub_kernel(
+    a: xt.memref("?xf32"),
+    result: xt.memref("?xf32"),
+):
+    block_id = xt.bid(0)
+    a_tile = xt.load(a, index=(block_id,), shape=(16, 16))
+    shift = 0.5
+    shifted = a_tile - shift
+    xt.store(result, index=(block_id,), tile=shifted)
+
+
+def test_convert_then_to_nova_constant_sub_becomes_add_with_negated_rhs():
+    module = xt.convert(constant_tensor_sub_kernel)
+    module = xt.to_nova(module)
+    dumped = xt.dump(module)
+
+    assert "nova.scalar" in dumped
+    assert "mode = 1 : i32" in dumped
+    assert "rhs = -5.000000e-01 : f32" in dumped
+    assert "mode = 3 : i32" not in dumped
+
+
+@xt.kernel
 def reshape_transpose_kernel(
     a: xt.memref("?xf32"),
     result: xt.memref("?xf32"),
@@ -519,6 +542,27 @@ def test_cli_xt_to_nova_and_canonicalize_work_together():
     assert completed.returncode == 0
     assert "nova.reduce" in completed.stdout
     assert "nova.broadcast" in completed.stdout
+
+
+def test_cli_nova_optimize_folds_scalar_into_broadcast():
+    source_path = Path("/home/sjjeong94/projects/xtile/python/kernels/layernorm.py")
+
+    completed = _run_xtile_cli(source_path, "--xt-to-nova", "--nova-optimize")
+
+    assert completed.returncode == 0
+    assert completed.stdout.count("nova.scalar") == 1
+    assert "nova.broadcast" in completed.stdout
+    assert "rhs_s = 6.250000e-02 : f32" in completed.stdout
+
+
+def test_cli_nova_optimize_does_not_depend_on_xt_opt_path(monkeypatch: pytest.MonkeyPatch):
+    source_path = Path("/home/sjjeong94/projects/xtile/python/kernels/layernorm.py")
+    monkeypatch.setenv("XTILE_XT_OPT_BIN", "/nonexistent/xt-opt")
+
+    completed = _run_xtile_cli(source_path, "--xt-to-nova", "--nova-optimize")
+
+    assert completed.returncode == 0
+    assert "rhs_s = 6.250000e-02 : f32" in completed.stdout
 
 
 @xt.kernel

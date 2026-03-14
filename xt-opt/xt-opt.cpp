@@ -1,4 +1,5 @@
 #include "nova/NovaDialect.h"
+#include "nova/NovaPasses.h"
 #include "xt/XTDialect.h"
 #include "xt/XTPasses.h"
 
@@ -14,6 +15,7 @@
 
 int main(int argc, char **argv) {
   mlir::registerAllPasses();
+  mlir::nova::registerPasses();
   mlir::xt::registerPasses();
 
   mlir::DialectRegistry registry;

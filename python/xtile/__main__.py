@@ -9,7 +9,7 @@ import sys
 
 from mlir import passmanager
 
-from . import convert, dump, to_nova
+from . import convert, dump, optimize_nova, to_nova
 
 
 def _load_module(source_path: Path) -> object:
@@ -34,7 +34,6 @@ def _canonicalize(module: object) -> None:
         pm = passmanager.PassManager.parse("builtin.module(canonicalize)")
         pm.run(module.operation)
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="xtile")
     parser.add_argument("source", help="Python file containing @xt.kernel definitions")
@@ -47,6 +46,11 @@ def main(argv: list[str] | None = None) -> int:
         "--xt-to-nova",
         action="store_true",
         help="convert supported xt binary ops to nova ops before printing",
+    )
+    parser.add_argument(
+        "--nova-optimize",
+        action="store_true",
+        help="run the nova-optimize pass before printing",
     )
     args = parser.parse_args(argv)
 
@@ -63,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
             converted = convert(fn)
             if args.xt_to_nova:
                 converted = to_nova(converted)
+            if args.nova_optimize:
+                converted = optimize_nova(converted)
             if args.canonicalize:
                 _canonicalize(converted)
             modules.append(dump(converted))

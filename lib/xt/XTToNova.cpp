@@ -26,6 +26,13 @@ static FloatAttr buildFloatAttr(MLIRContext *context, float value) {
   return FloatAttr::get(Float32Type::get(context), value);
 }
 
+static std::pair<int32_t, float> normalizeScalarModeAndRhs(int32_t mode,
+                                                           float rhs) {
+  if (mode == 3)
+    return {1, -rhs};
+  return {mode, rhs};
+}
+
 static bool hasSingleElement(RankedTensorType type) {
   if (!type || !type.hasStaticShape())
     return false;
@@ -69,13 +76,13 @@ struct BinaryOpToNovaPattern : OpRewritePattern<OpTy> {
       return failure();
     FailureOr<float> rhsConstant = extractConstantFloat(op.getRhs());
     if (succeeded(rhsConstant)) {
+      auto [mode, rhsValue] = normalizeScalarModeAndRhs(getMode(), *rhsConstant);
       OperationState state(op.getLoc(), "nova.scalar");
       state.addOperands(op.getLhs());
       state.addTypes(resultType);
-      state.addAttribute("mode",
-                         buildModeAttr(rewriter.getContext(), getMode()));
-      state.addAttribute(
-          "rhs", buildFloatAttr(rewriter.getContext(), *rhsConstant));
+      state.addAttribute("mode", buildModeAttr(rewriter.getContext(), mode));
+      state.addAttribute("rhs",
+                         buildFloatAttr(rewriter.getContext(), rhsValue));
 
       Operation *novaOp = rewriter.create(state);
       rewriter.replaceOp(op, novaOp->getResults());
