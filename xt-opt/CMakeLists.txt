@@ -5,6 +5,7 @@ set(LLVM_LINK_COMPONENTS
 add_llvm_executable(xt-opt xt-opt.cpp)
 llvm_update_compile_flags(xt-opt)
 target_link_libraries(xt-opt PRIVATE
+  MLIRNova
   MLIRArithDialect
   MLIRFuncDialect
   MLIRIR

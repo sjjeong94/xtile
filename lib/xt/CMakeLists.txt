@@ -2,6 +2,7 @@ add_mlir_dialect_library(MLIRXT
   XTDialect.cpp
   XTOps.cpp
   XTLowerToLoops.cpp
+  XTToNova.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/include/xt
@@ -11,6 +12,7 @@ add_mlir_dialect_library(MLIRXT
   MLIRXTPassesIncGen
 
   LINK_LIBS PUBLIC
+  MLIRNova
   MLIRArithDialect
   MLIRFuncDialect
   MLIRIR

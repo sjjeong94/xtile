@@ -1,3 +1,4 @@
+#include "nova/NovaDialect.h"
 #include "xt/XTDialect.h"
 #include "xt/XTPasses.h"
 
@@ -16,10 +17,10 @@ int main(int argc, char **argv) {
   mlir::xt::registerPasses();
 
   mlir::DialectRegistry registry;
-  registry.insert<mlir::xt::XTDialect, mlir::arith::ArithDialect,
-                  mlir::func::FuncDialect, mlir::math::MathDialect,
-                  mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
-                  mlir::tensor::TensorDialect>();
+  registry.insert<mlir::nova::NovaDialect, mlir::xt::XTDialect,
+                  mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                  mlir::math::MathDialect, mlir::memref::MemRefDialect,
+                  mlir::scf::SCFDialect, mlir::tensor::TensorDialect>();
 
   return mlir::asMainReturnCode(
       mlir::MlirOptMain(argc, argv, "xt optimizer driver\n", registry));

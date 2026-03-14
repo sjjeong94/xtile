@@ -23,6 +23,7 @@ from .dsl import (
     transpose,
 )
 from .ir_builder import build_module
+from .nova import to_nova
 from .types import memref
 
 
@@ -54,5 +55,6 @@ __all__ = [
     "store",
     "sum",
     "tanh",
+    "to_nova",
     "transpose",
 ]

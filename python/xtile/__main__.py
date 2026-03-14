@@ -9,7 +9,7 @@ import sys
 
 from mlir import passmanager
 
-from . import convert, dump
+from . import convert, dump, to_nova
 
 
 def _load_module(source_path: Path) -> object:
@@ -43,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="run the MLIR canonicalize pass before printing",
     )
+    parser.add_argument(
+        "--xt-to-nova",
+        action="store_true",
+        help="convert supported xt binary ops to nova ops before printing",
+    )
     args = parser.parse_args(argv)
 
     source_path = Path(args.source).resolve()
@@ -56,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
         modules = []
         for fn in kernels:
             converted = convert(fn)
+            if args.xt_to_nova:
+                converted = to_nova(converted)
             if args.canonicalize:
                 _canonicalize(converted)
             modules.append(dump(converted))

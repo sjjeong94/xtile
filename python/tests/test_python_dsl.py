@@ -224,6 +224,41 @@ def test_convert_broadcast_binary_kernel():
 
 
 @xt.kernel
+def elementwise_mul_kernel(
+    a: xt.memref("?xf32"),
+    b: xt.memref("?xf32"),
+    result: xt.memref("?xf32"),
+):
+    block_id = xt.bid(0)
+    lhs = xt.load(a, index=(block_id,), shape=(16, 16))
+    rhs = xt.load(b, index=(block_id,), shape=(16, 16))
+    prod = lhs * rhs
+    xt.store(result, index=(block_id,), tile=prod)
+
+
+def test_convert_then_to_nova_broadcast_binary_kernel():
+    module = xt.convert(broadcast_sub_kernel)
+    module = xt.to_nova(module)
+    dumped = xt.dump(module)
+
+    assert "nova.reduce" in dumped
+    assert "mode = 1 : i32" in dumped
+    assert "nova.broadcast" in dumped
+    assert "mode = 3 : i32" in dumped
+    assert "xt.sub" not in dumped
+
+
+def test_convert_then_to_nova_elementwise_kernel():
+    module = xt.convert(elementwise_mul_kernel)
+    module = xt.to_nova(module)
+    dumped = xt.dump(module)
+
+    assert "nova.elementwise" in dumped
+    assert "mode = 2 : i32" in dumped
+    assert "xt.mul" not in dumped
+
+
+@xt.kernel
 def reshape_transpose_kernel(
     a: xt.memref("?xf32"),
     result: xt.memref("?xf32"),
@@ -440,6 +475,33 @@ def test_cli_canonicalize_prints_canonicalized_mlir():
     assert "%c64_i32 = arith.constant 64 : i32" not in canonicalized.stdout
     assert raw.stdout.count("arith.constant 0 : i32") == 2
     assert canonicalized.stdout.count("arith.constant 0 : i32") == 1
+
+
+def test_cli_xt_to_nova_prints_nova_mlir():
+    source_path = Path("/home/sjjeong94/projects/xtile/python/kernels/softmax.py")
+
+    raw = _run_xtile_cli(source_path)
+    nova = _run_xtile_cli(source_path, "--xt-to-nova")
+
+    assert raw.returncode == 0
+    assert nova.returncode == 0
+    assert "xt.sub" in raw.stdout
+    assert "nova.reduce" in nova.stdout
+    assert "mode = 1 : i32" in nova.stdout
+    assert "mode = 0 : i32" in nova.stdout
+    assert "nova.broadcast" in nova.stdout
+    assert "mode = 3 : i32" in nova.stdout
+    assert "xt.sub" not in nova.stdout
+
+
+def test_cli_xt_to_nova_and_canonicalize_work_together():
+    source_path = Path("/home/sjjeong94/projects/xtile/python/kernels/softmax.py")
+
+    completed = _run_xtile_cli(source_path, "--xt-to-nova", "--canonicalize")
+
+    assert completed.returncode == 0
+    assert "nova.reduce" in completed.stdout
+    assert "nova.broadcast" in completed.stdout
 
 
 @xt.kernel
