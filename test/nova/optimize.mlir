@@ -41,6 +41,38 @@ module {
     %1 = "nova.scalar"(%0) <{mode = 1 : i32, rhs = 2.500000e-01 : f32}> : (tensor<16x8xf32>) -> tensor<16x8xf32>
     return %1 : tensor<16x8xf32>
   }
+
+  func.func @fold_broadcast_mul_into_matmul(%lhs: tensor<16x32xf32>, %rhs: tensor<32x8xf32>, %scale_arg: tensor<1x1xf32>) -> tensor<16x8xf32> {
+    %scale = arith.constant dense<1.000000e+00> : tensor<1x1xf32>
+    %bias = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
+    %0 = "nova.matmul"(%lhs, %rhs, %scale, %bias) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+    %1 = "nova.broadcast"(%0, %scale_arg) <{lhs_b = 0.000000e+00 : f32, lhs_s = 1.000000e+00 : f32, mode = 2 : i32, rhs_b = 0.000000e+00 : f32, rhs_s = 1.000000e+00 : f32}> : (tensor<16x8xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+    return %1 : tensor<16x8xf32>
+  }
+
+  func.func @do_not_fold_broadcast_mul_into_multiuse_matmul(%lhs: tensor<16x32xf32>, %rhs: tensor<32x8xf32>, %scale_arg: tensor<1x1xf32>) -> (tensor<16x8xf32>, tensor<16x8xf32>) {
+    %scale = arith.constant dense<1.000000e+00> : tensor<1x1xf32>
+    %bias = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
+    %0 = "nova.matmul"(%lhs, %rhs, %scale, %bias) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+    %1 = "nova.broadcast"(%0, %scale_arg) <{lhs_b = 0.000000e+00 : f32, lhs_s = 1.000000e+00 : f32, mode = 2 : i32, rhs_b = 0.000000e+00 : f32, rhs_s = 1.000000e+00 : f32}> : (tensor<16x8xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+    return %0, %1 : tensor<16x8xf32>, tensor<16x8xf32>
+  }
+
+  func.func @fold_broadcast_add_into_matmul(%lhs: tensor<16x32xf32>, %rhs: tensor<32x8xf32>, %bias_arg: tensor<1x1xf32>) -> tensor<16x8xf32> {
+    %scale = arith.constant dense<3.000000e+00> : tensor<1x1xf32>
+    %bias = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
+    %0 = "nova.matmul"(%lhs, %rhs, %scale, %bias) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+    %1 = "nova.broadcast"(%0, %bias_arg) <{lhs_b = 0.000000e+00 : f32, lhs_s = 1.000000e+00 : f32, mode = 1 : i32, rhs_b = 0.000000e+00 : f32, rhs_s = 1.000000e+00 : f32}> : (tensor<16x8xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+    return %1 : tensor<16x8xf32>
+  }
+
+  func.func @do_not_fold_broadcast_add_into_multiuse_matmul(%lhs: tensor<16x32xf32>, %rhs: tensor<32x8xf32>, %bias_arg: tensor<1x1xf32>) -> (tensor<16x8xf32>, tensor<16x8xf32>) {
+    %scale = arith.constant dense<3.000000e+00> : tensor<1x1xf32>
+    %bias = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
+    %0 = "nova.matmul"(%lhs, %rhs, %scale, %bias) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+    %1 = "nova.broadcast"(%0, %bias_arg) <{lhs_b = 0.000000e+00 : f32, lhs_s = 1.000000e+00 : f32, mode = 1 : i32, rhs_b = 0.000000e+00 : f32, rhs_s = 1.000000e+00 : f32}> : (tensor<16x8xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+    return %0, %1 : tensor<16x8xf32>, tensor<16x8xf32>
+  }
 }
 
 // CHECK-LABEL: func.func @fold_rhs_scalar_into_broadcast
@@ -82,3 +114,23 @@ module {
 // CHECK: %[[SCALE:.*]] = arith.constant dense<4.000000e+00> : tensor<1x1xf32>
 // CHECK: %[[BIAS:.*]] = arith.constant dense<7.500000e-01> : tensor<1x1xf32>
 // CHECK: "nova.matmul"(%arg0, %arg1, %[[SCALE]], %[[BIAS]]) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+
+// CHECK-LABEL: func.func @fold_broadcast_mul_into_matmul
+// CHECK-NOT: "nova.broadcast"
+// CHECK: "nova.matmul"(%arg0, %arg1, %arg2, %{{.*}}) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+
+// CHECK-LABEL: func.func @do_not_fold_broadcast_mul_into_multiuse_matmul
+// CHECK: %[[SCALE:.*]] = arith.constant dense<1.000000e+00> : tensor<1x1xf32>
+// CHECK: %[[BIAS:.*]] = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
+// CHECK: %[[MM:.*]] = "nova.matmul"(%arg0, %arg1, %[[SCALE]], %[[BIAS]]) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+// CHECK: %[[BCAST:.*]] = "nova.broadcast"(%[[MM]], %arg2) <{lhs_b = 0.000000e+00 : f32, lhs_s = 1.000000e+00 : f32, mode = 2 : i32, rhs_b = 0.000000e+00 : f32, rhs_s = 1.000000e+00 : f32}> : (tensor<16x8xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+
+// CHECK-LABEL: func.func @fold_broadcast_add_into_matmul
+// CHECK-NOT: "nova.broadcast"
+// CHECK: "nova.matmul"(%arg0, %arg1, %{{.*}}, %arg2) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+
+// CHECK-LABEL: func.func @do_not_fold_broadcast_add_into_multiuse_matmul
+// CHECK: %[[SCALE2:.*]] = arith.constant dense<3.000000e+00> : tensor<1x1xf32>
+// CHECK: %[[BIAS2:.*]] = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
+// CHECK: %[[MM2:.*]] = "nova.matmul"(%arg0, %arg1, %[[SCALE2]], %[[BIAS2]]) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>
+// CHECK: %[[BCAST2:.*]] = "nova.broadcast"(%[[MM2]], %arg2) <{lhs_b = 0.000000e+00 : f32, lhs_s = 1.000000e+00 : f32, mode = 1 : i32, rhs_b = 0.000000e+00 : f32, rhs_s = 1.000000e+00 : f32}> : (tensor<16x8xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>

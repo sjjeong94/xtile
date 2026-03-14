@@ -47,6 +47,10 @@ static Value buildScalarTensorConstant(PatternRewriter &rewriter, Location loc,
       .getResult();
 }
 
+static bool isFloatAttrValue(Operation *op, StringRef name, float value) {
+  return getFloatAttr(op, name) == value;
+}
+
 static LogicalResult foldScalarIntoSide(Operation *scalarOp, float &scale,
                                         float &bias) {
   int32_t mode =
@@ -160,6 +164,76 @@ struct FoldScalarIntoMatmulPattern : OpRewritePattern<nova::ScalarOp> {
   }
 };
 
+struct FoldBroadcastMulIntoMatmulPattern
+    : OpRewritePattern<nova::BroadcastOp> {
+  using OpRewritePattern<nova::BroadcastOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(nova::BroadcastOp op,
+                                PatternRewriter &rewriter) const override {
+    int32_t mode = op->getAttrOfType<IntegerAttr>("mode").getInt();
+    if (mode != 2)
+      return failure();
+
+    auto matmulOp = op.getLhs().getDefiningOp<nova::MatmulOp>();
+    if (!matmulOp || !matmulOp->hasOneUse())
+      return failure();
+
+    FailureOr<float> scaleValue = getSplatFloatValue(matmulOp.getScale());
+    FailureOr<float> biasValue = getSplatFloatValue(matmulOp.getBias());
+    if (failed(scaleValue) || failed(biasValue) || *scaleValue != 1.0f ||
+        *biasValue != 0.0f)
+      return failure();
+
+    if (!isFloatAttrValue(op, "lhs_s", 1.0f) || !isFloatAttrValue(op, "lhs_b", 0.0f) ||
+        !isFloatAttrValue(op, "rhs_s", 1.0f) || !isFloatAttrValue(op, "rhs_b", 0.0f))
+      return failure();
+
+    OperationState state(op.getLoc(), "nova.matmul");
+    state.addOperands(
+        {matmulOp.getLhs(), matmulOp.getRhs(), op.getRhs(), matmulOp.getBias()});
+    state.addTypes(op.getResult().getType());
+
+    Operation *newOp = rewriter.create(state);
+    rewriter.replaceOp(op, newOp->getResults());
+    return success();
+  }
+};
+
+struct FoldBroadcastAddIntoMatmulPattern
+    : OpRewritePattern<nova::BroadcastOp> {
+  using OpRewritePattern<nova::BroadcastOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(nova::BroadcastOp op,
+                                PatternRewriter &rewriter) const override {
+    int32_t mode = op->getAttrOfType<IntegerAttr>("mode").getInt();
+    if (mode != 1)
+      return failure();
+
+    auto matmulOp = op.getLhs().getDefiningOp<nova::MatmulOp>();
+    if (!matmulOp || !matmulOp->hasOneUse())
+      return failure();
+
+    FailureOr<float> biasValue = getSplatFloatValue(matmulOp.getBias());
+    if (failed(biasValue) || *biasValue != 0.0f)
+      return failure();
+
+    if (!isFloatAttrValue(op, "lhs_s", 1.0f) ||
+        !isFloatAttrValue(op, "lhs_b", 0.0f) ||
+        !isFloatAttrValue(op, "rhs_s", 1.0f) ||
+        !isFloatAttrValue(op, "rhs_b", 0.0f))
+      return failure();
+
+    OperationState state(op.getLoc(), "nova.matmul");
+    state.addOperands(
+        {matmulOp.getLhs(), matmulOp.getRhs(), matmulOp.getScale(), op.getRhs()});
+    state.addTypes(op.getResult().getType());
+
+    Operation *newOp = rewriter.create(state);
+    rewriter.replaceOp(op, newOp->getResults());
+    return success();
+  }
+};
+
 class NovaOptimizePass
     : public mlir::nova::impl::NovaOptimizeBase<NovaOptimizePass> {
 public:
@@ -167,7 +241,9 @@ public:
     RewritePatternSet patterns(&getContext());
     patterns.add<FoldScalarIntoBinaryPattern<nova::BroadcastOp>,
                  FoldScalarIntoBinaryPattern<nova::ElementwiseOp>,
-                 FoldScalarIntoMatmulPattern>(
+                 FoldScalarIntoMatmulPattern,
+                 FoldBroadcastMulIntoMatmulPattern,
+                 FoldBroadcastAddIntoMatmulPattern>(
         &getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
