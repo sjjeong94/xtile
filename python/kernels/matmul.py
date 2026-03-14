@@ -14,4 +14,5 @@ def matmul_kernel(
     a_tile = xt.load(a, index=(bid_x, 0), shape=(tm, 128))
     b_tile = xt.load(b, index=(0, bid_y), shape=(128, tn), shared=1)
     result_tile = a_tile @ b_tile
+    result_tile = result_tile * 3.0 + 2.0
     xt.store(result, index=(bid_x, bid_y), tile=result_tile)

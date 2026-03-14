@@ -17,6 +17,12 @@ _REDUCE_OP_RE = re.compile(
     r'"xt\.(?P<op>reduce_sum|reduce_max)"\((?P<input>%[^)]+)\) : '
     r'\((?P<input_type>tensor<[^>]+>)\) -> (?P<result_type>tensor<[^>]+>)'
 )
+_MATMUL_OP_RE = re.compile(
+    r'^(?P<indent>\s*)(?P<result>%[\w\d._]+) = "xt\.matmul"\((?P<lhs>%[^,]+), (?P<rhs>%[^)]+)\) : '
+    r'\((?P<lhs_type>tensor<[^>]+>), (?P<rhs_type>tensor<[^>]+>)\) -> '
+    r'(?P<result_type>tensor<[^>]+>)$',
+    re.MULTILINE,
+)
 _NOVA_SCALAR_LINE_RE = re.compile(
     r'^(?P<indent>\s*)(?P<result>%[\w\d._]+) = "nova\.scalar"\((?P<input>%[^)]+)\) '
     r'<\{mode = (?P<mode>\d+) : i32, rhs = (?P<rhs>[-+0-9.eE]+) : f32\}> : '
@@ -30,6 +36,16 @@ _NOVA_BINARY_LINE_RE = re.compile(
     r'rhs_s = (?P<rhs_s>[-+0-9.eE]+) : f32\}> : '
     r'\((?P<lhs_type>tensor<[^>]+>), (?P<rhs_type>tensor<[^>]+>)\) -> '
     r'(?P<result_type>tensor<[^>]+>)$'
+)
+_NOVA_MATMUL_LINE_RE = re.compile(
+    r'^(?P<indent>\s*)(?P<result>%[\w\d._]+) = "nova\.matmul"'
+    r'\((?P<lhs>%[^,]+), (?P<rhs>%[^,]+), (?P<scale>%[^,]+), (?P<bias>%[^)]+)\) : '
+    r'\((?P<lhs_type>tensor<[^>]+>), (?P<rhs_type>tensor<[^>]+>), '
+    r'(?P<scale_type>tensor<[^>]+>), (?P<bias_type>tensor<[^>]+>)\) -> '
+    r'(?P<result_type>tensor<[^>]+>)$'
+)
+_PURE_RESULT_LINE_RE = re.compile(
+    r'^\s*(?P<result>%[\w\d._]+)\s*=\s*(?:"nova\.[^"]+"|arith\.constant(?:\s|$))'
 )
 _MODE_BY_OP = {"add": 1, "mul": 2, "sub": 3}
 _REDUCE_MODE_BY_OP = {"reduce_sum": 0, "reduce_max": 1}
@@ -53,6 +69,7 @@ def to_nova(module: ir.Module) -> ir.Module:
     rewritten = _BINARY_OP_RE.sub(
         lambda match: _rewrite_binary_op(match, constant_map), rewritten
     )
+    rewritten = _MATMUL_OP_RE.sub(_rewrite_matmul_op, rewritten)
     if rewritten == text:
         return module
 
@@ -64,7 +81,12 @@ def to_nova(module: ir.Module) -> ir.Module:
 
 def optimize_nova(module: ir.Module) -> ir.Module:
     text = str(module)
-    rewritten = _rewrite_nova_scalar_folds(text)
+    rewritten = text
+    while True:
+        next_rewritten = _rewrite_nova_scalar_folds(rewritten)
+        if next_rewritten == rewritten:
+            break
+        rewritten = next_rewritten
     if rewritten == text:
         return module
 
@@ -116,22 +138,73 @@ def _rewrite_reduce_op(match: re.Match[str]) -> str:
     )
 
 
+def _rewrite_matmul_op(match: re.Match[str]) -> str:
+    result_suffix = match.group("result").lstrip("%").replace(".", "_")
+    scale_name = f"%matmul_scale_{result_suffix}"
+    bias_name = f"%matmul_bias_{result_suffix}"
+    indent = match.group("indent")
+    return (
+        f"{indent}{scale_name} = arith.constant dense<1.000000e+00> : tensor<1x1xf32>\n"
+        f"{indent}{bias_name} = arith.constant dense<0.000000e+00> : tensor<1x1xf32>\n"
+        f'{indent}{match.group("result")} = "nova.matmul"({match.group("lhs")}, {match.group("rhs")}, '
+        f"{scale_name}, {bias_name}) : "
+        f'({match.group("lhs_type")}, {match.group("rhs_type")}, tensor<1x1xf32>, tensor<1x1xf32>) -> '
+        f'{match.group("result_type")}'
+    )
+
+
 def _rewrite_nova_scalar_folds(text: str) -> str:
     lines = text.splitlines()
     scalar_defs: dict[str, dict[str, object]] = {}
+    constant_defs: dict[str, float] = {}
+    matmul_defs: dict[str, dict[str, str]] = {}
     for index, line in enumerate(lines):
         match = _NOVA_SCALAR_LINE_RE.match(line)
-        if match is None:
+        if match is not None:
+            scalar_defs[match.group("result")] = {
+                "result": match.group("result"),
+                "index": index,
+                "input": match.group("input"),
+                "mode": int(match.group("mode")),
+                "rhs": float(match.group("rhs")),
+            }
             continue
-        scalar_defs[match.group("result")] = {
-            "index": index,
-            "input": match.group("input"),
-            "mode": int(match.group("mode")),
-            "rhs": float(match.group("rhs")),
-        }
+
+        matmul_match = _NOVA_MATMUL_LINE_RE.match(line)
+        if matmul_match is not None:
+            matmul_defs[matmul_match.group("result")] = {
+                "lhs": matmul_match.group("lhs"),
+                "rhs": matmul_match.group("rhs"),
+                "scale": matmul_match.group("scale"),
+                "bias": matmul_match.group("bias"),
+                "lhs_type": matmul_match.group("lhs_type"),
+                "rhs_type": matmul_match.group("rhs_type"),
+                "scale_type": matmul_match.group("scale_type"),
+                "bias_type": matmul_match.group("bias_type"),
+                "result_type": matmul_match.group("result_type"),
+            }
+            continue
+
+        constant_match = _CONSTANT_OP_RE.match(line.strip())
+        if constant_match is not None and _is_scalar_tensor_type(
+            constant_match.group("type")
+        ):
+            constant_defs[constant_match.group("name")] = float(
+                constant_match.group("value")
+            )
 
     changed = False
     for index, line in enumerate(lines):
+        scalar_match = _NOVA_SCALAR_LINE_RE.match(line)
+        if scalar_match is not None:
+            rewritten = _rewrite_nova_scalar_over_matmul_line(
+                scalar_match, matmul_defs, constant_defs
+            )
+            if rewritten != line:
+                lines[index] = rewritten
+                changed = True
+            continue
+
         match = _NOVA_BINARY_LINE_RE.match(line)
         if match is None:
             continue
@@ -146,8 +219,8 @@ def _rewrite_nova_scalar_folds(text: str) -> str:
     used_values = _collect_ssa_uses(lines)
     filtered_lines = []
     for line in lines:
-        match = _NOVA_SCALAR_LINE_RE.match(line)
-        if match is not None and match.group("result") not in used_values:
+        pure_match = _PURE_RESULT_LINE_RE.match(line)
+        if pure_match is not None and pure_match.group("result") not in used_values:
             continue
         filtered_lines.append(line)
     return "\n".join(filtered_lines) + ("\n" if text.endswith("\n") else "")
@@ -206,6 +279,45 @@ def _fold_scalar_attrs(
     if mode == 2:
         return scale * rhs, bias
     return None
+
+
+def _rewrite_nova_scalar_over_matmul_line(
+    match: re.Match[str],
+    matmul_defs: dict[str, dict[str, str]],
+    constant_defs: dict[str, float],
+) -> str:
+    matmul = matmul_defs.get(match.group("input"))
+    if matmul is None:
+        return match.group(0)
+    scale_name = matmul["scale"]
+    bias_name = matmul["bias"]
+    scale_value = constant_defs.get(scale_name)
+    bias_value = constant_defs.get(bias_name)
+    if scale_value is None or bias_value is None:
+        return match.group(0)
+
+    mode = int(match.group("mode"))
+    rhs = float(match.group("rhs"))
+    if mode == 1:
+        new_scale = scale_value
+        new_bias = bias_value + rhs
+    elif mode == 2:
+        new_scale = scale_value * rhs
+        new_bias = bias_value * rhs
+    else:
+        return match.group(0)
+
+    indent = match.group("indent")
+    result_suffix = match.group("result").lstrip("%").replace(".", "_")
+    new_scale_name = f"%matmul_scale_folded_{result_suffix}"
+    new_bias_name = f"%matmul_bias_folded_{result_suffix}"
+    return (
+        f"{indent}{new_scale_name} = arith.constant dense<{new_scale:.6e}> : {matmul['scale_type']}\n"
+        f"{indent}{new_bias_name} = arith.constant dense<{new_bias:.6e}> : {matmul['bias_type']}\n"
+        f'{indent}{match.group("result")} = "nova.matmul"({matmul["lhs"]}, {matmul["rhs"]}, {new_scale_name}, {new_bias_name}) : '
+        f'({matmul["lhs_type"]}, {matmul["rhs_type"]}, {matmul["scale_type"]}, {matmul["bias_type"]}) -> '
+        f'{matmul["result_type"]}'
+    )
 
 
 def _collect_ssa_uses(lines: list[str]) -> set[str]:

@@ -69,7 +69,8 @@ def main(argv: list[str] | None = None) -> int:
                 converted = to_nova(converted)
             if args.nova_optimize:
                 converted = optimize_nova(converted)
-            if args.canonicalize:
+                _canonicalize(converted)
+            elif args.canonicalize:
                 _canonicalize(converted)
             modules.append(dump(converted))
         print("\n\n".join(modules))

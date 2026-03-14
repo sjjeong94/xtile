@@ -136,6 +136,35 @@ struct ReduceOpToNovaPattern : OpRewritePattern<OpTy> {
   static int32_t getMode();
 };
 
+struct MatmulOpToNovaPattern : OpRewritePattern<xt::MatmulOp> {
+  using OpRewritePattern<xt::MatmulOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(xt::MatmulOp op,
+                                PatternRewriter &rewriter) const override {
+    auto lhsType = dyn_cast<RankedTensorType>(op.getLhs().getType());
+    auto rhsType = dyn_cast<RankedTensorType>(op.getRhs().getType());
+    auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
+    if (!lhsType || !rhsType || !resultType)
+      return failure();
+
+    auto scalarTensorType =
+        RankedTensorType::get({1, 1}, rewriter.getF32Type());
+    auto scale = arith::ConstantOp::create(
+        rewriter, op.getLoc(), DenseElementsAttr::get(scalarTensorType, 1.0f));
+    auto bias = arith::ConstantOp::create(
+        rewriter, op.getLoc(), DenseElementsAttr::get(scalarTensorType, 0.0f));
+
+    OperationState state(op.getLoc(), "nova.matmul");
+    state.addOperands({op.getLhs(), op.getRhs(), scale.getResult(),
+                       bias.getResult()});
+    state.addTypes(resultType);
+
+    Operation *novaOp = rewriter.create(state);
+    rewriter.replaceOp(op, novaOp->getResults());
+    return success();
+  }
+};
+
 template <>
 int32_t BinaryOpToNovaPattern<xt::AddOp>::getMode() {
   return 1;
@@ -168,6 +197,7 @@ public:
     patterns.add<BinaryOpToNovaPattern<xt::AddOp>,
                  BinaryOpToNovaPattern<xt::MulOp>,
                  BinaryOpToNovaPattern<xt::SubOp>,
+                 MatmulOpToNovaPattern,
                  ReduceOpToNovaPattern<xt::ReduceSumOp>,
                  ReduceOpToNovaPattern<xt::ReduceMaxOp>>(&getContext());
 

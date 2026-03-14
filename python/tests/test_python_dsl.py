@@ -355,8 +355,28 @@ def test_convert_matmul_kernel_example():
     assert "func.func @matmul_kernel" in dumped
     assert dumped.count("xt.load") == 2
     assert "xt.matmul" in dumped
+    assert "xt.mul" in dumped
+    assert "xt.add" in dumped
+    assert "dense<3.000000e+00>" in dumped
+    assert "dense<2.000000e+00>" in dumped
+    assert "tensor<1x1xf32>" in dumped
     assert "xt.store" in dumped
     assert "tensor<64x64xf32>" in dumped
+
+
+def test_convert_then_to_nova_matmul_kernel():
+    module = xt.convert(matmul_kernel)
+    module = xt.to_nova(module)
+    dumped = xt.dump(module)
+
+    assert "nova.matmul" in dumped
+    assert "xt.matmul" not in dumped
+    assert "arith.constant dense<1.000000e+00> : tensor<1x1xf32>" in dumped
+    assert "arith.constant dense<0.000000e+00> : tensor<1x1xf32>" in dumped
+    assert (
+        '(tensor<64x128xf32>, tensor<128x64xf32>, tensor<1x1xf32>, tensor<1x1xf32>)'
+        in dumped
+    )
 
 
 def test_convert_softmax_kernel():
@@ -544,6 +564,18 @@ def test_cli_xt_to_nova_and_canonicalize_work_together():
     assert "nova.broadcast" in completed.stdout
 
 
+def test_cli_xt_to_nova_prints_nova_matmul():
+    source_path = Path("/home/sjjeong94/projects/xtile/python/kernels/matmul.py")
+
+    completed = _run_xtile_cli(source_path, "--xt-to-nova")
+
+    assert completed.returncode == 0
+    assert "nova.matmul" in completed.stdout
+    assert "xt.matmul" not in completed.stdout
+    assert "arith.constant dense<1.000000e+00> : tensor<1x1xf32>" in completed.stdout
+    assert "arith.constant dense<0.000000e+00> : tensor<1x1xf32>" in completed.stdout
+
+
 def test_cli_nova_optimize_folds_scalar_into_broadcast():
     source_path = Path("/home/sjjeong94/projects/xtile/python/kernels/layernorm.py")
 
@@ -553,6 +585,20 @@ def test_cli_nova_optimize_folds_scalar_into_broadcast():
     assert completed.stdout.count("nova.scalar") == 1
     assert "nova.broadcast" in completed.stdout
     assert "rhs_s = 6.250000e-02 : f32" in completed.stdout
+
+
+def test_cli_nova_optimize_folds_scalar_into_matmul():
+    source_path = Path("/home/sjjeong94/projects/xtile/python/kernels/matmul.py")
+
+    completed = _run_xtile_cli(source_path, "--xt-to-nova", "--nova-optimize")
+
+    assert completed.returncode == 0
+    assert completed.stdout.count("nova.scalar") == 0
+    assert completed.stdout.count("nova.matmul") == 1
+    assert "dense<3.000000e+00>" in completed.stdout
+    assert "dense<2.000000e+00>" in completed.stdout
+    assert "dense<1.000000e+00>" not in completed.stdout
+    assert "dense<0.000000e+00>" not in completed.stdout
 
 
 def test_cli_nova_optimize_does_not_depend_on_xt_opt_path(monkeypatch: pytest.MonkeyPatch):

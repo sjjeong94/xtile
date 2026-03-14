@@ -1,5 +1,6 @@
 #include "nova/NovaPasses.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/PatternMatch.h"
@@ -13,12 +14,37 @@ namespace mlir::nova {
 using namespace mlir;
 
 namespace {
+static FailureOr<float> getSplatFloatValue(Value value) {
+  auto constant = value.getDefiningOp<arith::ConstantOp>();
+  if (!constant)
+    return failure();
+
+  Attribute attr = constant.getValue();
+  auto dense = llvm::dyn_cast<DenseElementsAttr>(attr);
+  if (!dense || !dense.isSplat())
+    return failure();
+
+  auto splat = dense.getSplatValue<Attribute>();
+  auto floatAttr = llvm::dyn_cast<FloatAttr>(splat);
+  if (!floatAttr)
+    return failure();
+  return floatAttr.getValueAsDouble();
+}
+
 static float getFloatAttr(Operation *op, StringRef name) {
   return op->getAttrOfType<FloatAttr>(name).getValueAsDouble();
 }
 
 static FloatAttr makeFloatAttr(MLIRContext *context, float value) {
   return FloatAttr::get(Float32Type::get(context), value);
+}
+
+static Value buildScalarTensorConstant(PatternRewriter &rewriter, Location loc,
+                                       float value) {
+  auto tensorType = RankedTensorType::get({1, 1}, rewriter.getF32Type());
+  return arith::ConstantOp::create(
+             rewriter, loc, DenseElementsAttr::get(tensorType, value))
+      .getResult();
 }
 
 static LogicalResult foldScalarIntoSide(Operation *scalarOp, float &scale,
@@ -89,13 +115,59 @@ struct FoldScalarIntoBinaryPattern : OpRewritePattern<OpTy> {
   }
 };
 
+struct FoldScalarIntoMatmulPattern : OpRewritePattern<nova::ScalarOp> {
+  using OpRewritePattern<nova::ScalarOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(nova::ScalarOp op,
+                                PatternRewriter &rewriter) const override {
+    auto matmulOp = op.getInput().getDefiningOp<nova::MatmulOp>();
+    if (!matmulOp)
+      return failure();
+
+    FailureOr<float> scaleValue = getSplatFloatValue(matmulOp.getScale());
+    FailureOr<float> biasValue = getSplatFloatValue(matmulOp.getBias());
+    if (failed(scaleValue) || failed(biasValue))
+      return failure();
+
+    int32_t mode = op->getAttrOfType<IntegerAttr>("mode").getInt();
+    float rhs = getFloatAttr(op, "rhs");
+
+    Value newScale = matmulOp.getScale();
+    Value newBias = matmulOp.getBias();
+    switch (mode) {
+    case 1:
+      newBias = buildScalarTensorConstant(rewriter, op.getLoc(),
+                                          *biasValue + rhs);
+      break;
+    case 2:
+      newScale = buildScalarTensorConstant(rewriter, op.getLoc(),
+                                           *scaleValue * rhs);
+      newBias = buildScalarTensorConstant(rewriter, op.getLoc(),
+                                          *biasValue * rhs);
+      break;
+    default:
+      return failure();
+    }
+
+    OperationState state(op.getLoc(), "nova.matmul");
+    state.addOperands(
+        {matmulOp.getLhs(), matmulOp.getRhs(), newScale, newBias});
+    state.addTypes(op.getResult().getType());
+
+    Operation *newOp = rewriter.create(state);
+    rewriter.replaceOp(op, newOp->getResults());
+    return success();
+  }
+};
+
 class NovaOptimizePass
     : public mlir::nova::impl::NovaOptimizeBase<NovaOptimizePass> {
 public:
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     patterns.add<FoldScalarIntoBinaryPattern<nova::BroadcastOp>,
-                 FoldScalarIntoBinaryPattern<nova::ElementwiseOp>>(
+                 FoldScalarIntoBinaryPattern<nova::ElementwiseOp>,
+                 FoldScalarIntoMatmulPattern>(
         &getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))

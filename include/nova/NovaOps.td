@@ -36,6 +36,13 @@ def Nova_ScalarOp : Nova_Op<"scalar", [Pure]> {
   let results = (outs Nova_RankedTensor:$result);
 }
 
+def Nova_MatmulOp : Nova_Op<"matmul", [Pure]> {
+  let summary = "hardware tile matmul op";
+  let arguments = (ins Nova_RankedTensor:$lhs, Nova_RankedTensor:$rhs,
+                       Nova_RankedTensor:$scale, Nova_RankedTensor:$bias);
+  let results = (outs Nova_RankedTensor:$result);
+}
+
 def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {
   let summary = "hardware tile reduction op";
   let arguments = (ins Nova_RankedTensor:$input, I32Attr:$mode);

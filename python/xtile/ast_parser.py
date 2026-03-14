@@ -277,10 +277,13 @@ def _parse_tuple_assign(
 
 
 def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> object:
-    lhs_name = _expect_name(node.left, "binary lhs")
-    rhs_name = _expect_name(node.right, "binary rhs")
-    lhs_value = env.get(lhs_name)
-    rhs_value = env.get(rhs_name)
+    lhs_name, lhs_value, lhs_ops = _materialize_binop_operand(
+        name, "lhs", node.left, env
+    )
+    rhs_name, rhs_value, rhs_ops = _materialize_binop_operand(
+        name, "rhs", node.right, env
+    )
+    prefix_ops = [*lhs_ops, *rhs_ops]
 
     lhs_name, lhs_value, rhs_name, rhs_value, promoted_ops = _promote_float_operands(
         name, lhs_name, lhs_value, rhs_name, rhs_value
@@ -304,12 +307,39 @@ def _parse_binop(name: str, node: ast.BinOp, env: dict[str, object]) -> object:
                 rhs=rhs_name,
                 result=result,
             )
-            if promoted_ops:
-                return [*promoted_ops, binary_op]
+            if prefix_ops or promoted_ops:
+                return [*prefix_ops, *promoted_ops, binary_op]
             return binary_op
     if isinstance(node.op, ast.MatMult):
-        return _parse_matmul(name, lhs_name, rhs_name, lhs.spec, rhs.spec)
+        matmul_op = _parse_matmul(name, lhs_name, rhs_name, lhs.spec, rhs.spec)
+        if prefix_ops or promoted_ops:
+            return [*prefix_ops, *promoted_ops, matmul_op]
+        return matmul_op
     raise XTConversionError(f"unsupported binary operator: {ast.dump(node.op)}")
+
+
+def _materialize_binop_operand(
+    parent_name: str, side: str, node: ast.AST, env: dict[str, object]
+) -> tuple[str, object | None, list[object]]:
+    if isinstance(node, ast.Name):
+        return node.id, env.get(node.id), []
+    if isinstance(node, ast.Constant) and isinstance(node.value, float):
+        scalar_name = f"{parent_name}_{side}_scalar"
+        scalar_value = _FloatValue(float(node.value))
+        env[scalar_name] = scalar_value
+        return scalar_name, scalar_value, []
+    if isinstance(node, ast.BinOp):
+        nested_name = f"{parent_name}_{side}"
+        nested_op = _parse_binop(nested_name, node, env)
+        nested_ops = nested_op if isinstance(nested_op, list) else [nested_op]
+        final_op = nested_ops[-1]
+        if not hasattr(final_op, "result"):
+            raise XTConversionError("nested binary expression did not produce a tile")
+        env[nested_name] = _TileValue(final_op.result)
+        return nested_name, env[nested_name], nested_ops
+    raise XTConversionError(
+        f"unsupported binary operand: {ast.dump(node, include_attributes=False)}"
+    )
 
 
 def _promote_float_operands(

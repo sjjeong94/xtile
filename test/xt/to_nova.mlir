@@ -33,6 +33,11 @@ module {
     %0 = "xt.sub"(%a, %cst) : (tensor<16x16xf32>, tensor<1x1xf32>) -> tensor<16x16xf32>
     return %0 : tensor<16x16xf32>
   }
+
+  func.func @matmul(%a: tensor<16x32xf32>, %b: tensor<32x8xf32>) -> tensor<16x8xf32> {
+    %0 = "xt.matmul"(%a, %b) : (tensor<16x32xf32>, tensor<32x8xf32>) -> tensor<16x8xf32>
+    return %0 : tensor<16x8xf32>
+  }
 }
 
 // CHECK-LABEL: func.func @reduce_ops
@@ -66,3 +71,7 @@ module {
 // CHECK-SAME: mode = 1 : i32
 // CHECK-SAME: rhs = -1.250000e-01 : f32
 // CHECK: : (tensor<16x16xf32>) -> tensor<16x16xf32>
+// CHECK-LABEL: func.func @matmul
+// CHECK: %[[SCALE:.*]] = arith.constant dense<1.000000e+00> : tensor<1x1xf32>
+// CHECK: %[[BIAS:.*]] = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
+// CHECK: "nova.matmul"(%arg0, %arg1, %[[SCALE]], %[[BIAS]]) : (tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32>) -> tensor<16x8xf32>

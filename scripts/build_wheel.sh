@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_MLIR_ROOT="/home/sjjeong94/projects/llvm-project/build/tools/mlir/python_packages/mlir_core"
+DEFAULT_MLIR_ROOT="../llvm-project/build/tools/mlir/python_packages/mlir_core"
 MLIR_ROOT="${1:-${XTILE_MLIR_PYTHON_ROOT:-$DEFAULT_MLIR_ROOT}}"
 if [[ -n "${CONDA_PREFIX:-}" && -x "${CONDA_PREFIX}/bin/python" ]]; then
   DEFAULT_PYTHON_BIN="${CONDA_PREFIX}/bin/python"
@@ -54,3 +54,5 @@ find "$STAGING_DIR" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$STAGING_DIR" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
 "$PYTHON_BIN" -m build --no-isolation --wheel --outdir "$DIST_DIR" "$STAGING_DIR"
+
+pip install dist/xtile-0.1.0-cp312-cp312-manylinux_2_39_x86_64.whl --force-reinstall
