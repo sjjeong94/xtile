@@ -12,7 +12,6 @@ target_link_libraries(xt-opt PRIVATE
   MLIRMathDialect
   MLIRMemRefDialect
   MLIRPass
-  MLIRRegisterAllPasses
   MLIRSCFDialect
   MLIRTensorDialect
   MLIRSupport

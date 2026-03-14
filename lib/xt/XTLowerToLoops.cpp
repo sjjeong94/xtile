@@ -38,8 +38,8 @@ static Value createTensorLoopNest(
     PatternRewriter &rewriter, Location loc, RankedTensorType tensorType,
     function_ref<Value(OpBuilder &, Location, ValueRange)> bodyBuilder) {
   auto shape = tensorType.getShape();
-  Value empty = tensor::EmptyOp::create(rewriter, loc, shape,
-                                        tensorType.getElementType());
+  Value empty =
+      rewriter.create<tensor::EmptyOp>(loc, shape, tensorType.getElementType());
   SmallVector<Value> lbs, ubs, steps;
   for (int64_t dim : shape) {
     lbs.push_back(createIndexConstant(rewriter, loc, 0));
@@ -475,8 +475,9 @@ struct Conv2DLowering : public OpRewritePattern<Conv2DOp> {
 
               for (int64_t ic = 0; ic < inputType.getDimSize(3); ++ic) {
                 Value icVal = createIndexConstant(builder, nestedLoc, ic);
-                auto ifOp = scf::IfOp::create(builder, nestedLoc, TypeRange{elemType},
-                                              inBounds, /*withElseRegion=*/true);
+                auto ifOp = builder.create<scf::IfOp>(
+                    nestedLoc, TypeRange{elemType}, inBounds,
+                    /*withElseRegion=*/true);
                 {
                   OpBuilder::InsertionGuard guard(builder);
                   builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
@@ -568,8 +569,9 @@ struct DepthwiseConv2DLowering : public OpRewritePattern<DepthwiseConv2DOp> {
                   createBooleanAnd(builder, nestedLoc, inHLower, inHUpper),
                   createBooleanAnd(builder, nestedLoc, inWLower, inWUpper));
 
-              auto ifOp = scf::IfOp::create(builder, nestedLoc, TypeRange{elemType},
-                                            inBounds, /*withElseRegion=*/true);
+              auto ifOp = builder.create<scf::IfOp>(
+                  nestedLoc, TypeRange{elemType}, inBounds,
+                  /*withElseRegion=*/true);
               {
                 OpBuilder::InsertionGuard guard(builder);
                 builder.setInsertionPointToStart(&ifOp.getThenRegion().front());

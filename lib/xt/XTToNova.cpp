@@ -149,10 +149,10 @@ struct MatmulOpToNovaPattern : OpRewritePattern<xt::MatmulOp> {
 
     auto scalarTensorType =
         RankedTensorType::get({1, 1}, rewriter.getF32Type());
-    auto scale = arith::ConstantOp::create(
-        rewriter, op.getLoc(), DenseElementsAttr::get(scalarTensorType, 1.0f));
-    auto bias = arith::ConstantOp::create(
-        rewriter, op.getLoc(), DenseElementsAttr::get(scalarTensorType, 0.0f));
+    auto scale = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), DenseElementsAttr::get(scalarTensorType, 1.0f));
+    auto bias = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), DenseElementsAttr::get(scalarTensorType, 0.0f));
 
     OperationState state(op.getLoc(), "nova.matmul");
     state.addOperands({op.getLhs(), op.getRhs(), scale.getResult(),

@@ -42,8 +42,8 @@ static FloatAttr makeFloatAttr(MLIRContext *context, float value) {
 static Value buildScalarTensorConstant(PatternRewriter &rewriter, Location loc,
                                        float value) {
   auto tensorType = RankedTensorType::get({1, 1}, rewriter.getF32Type());
-  return arith::ConstantOp::create(
-             rewriter, loc, DenseElementsAttr::get(tensorType, value))
+  return rewriter
+      .create<arith::ConstantOp>(loc, DenseElementsAttr::get(tensorType, value))
       .getResult();
 }
 

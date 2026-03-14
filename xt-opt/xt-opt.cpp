@@ -10,11 +10,11 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/DialectRegistry.h"
-#include "mlir/InitAllPasses.h"
+#include "mlir/Transforms/Passes.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 
 int main(int argc, char **argv) {
-  mlir::registerAllPasses();
+  mlir::registerCanonicalizerPass();
   mlir::nova::registerPasses();
   mlir::xt::registerPasses();
 
