@@ -1,10 +1,9 @@
-#include "nova/NovaPasses.h"
-#include "nova/NovaOps.h"
+#include "xt/XTPasses.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/IRMapping.h"
 #include "xt/XTOps.h"
 
@@ -12,33 +11,33 @@
 #include <tuple>
 #include <vector>
 
-namespace mlir::nova {
-#define GEN_PASS_DEF_NOVASERIALIZE
-#include "nova/NovaPasses.h.inc"
-} // namespace mlir::nova
+namespace mlir::xt {
+#define GEN_PASS_DEF_XTSERIALIZE
+#include "xt/XTPasses.h.inc"
+} // namespace mlir::xt
 
 using namespace mlir;
 
 namespace {
-class NovaSerializePass
-    : public mlir::nova::impl::NovaSerializeBase<NovaSerializePass> {
+class XTSerializePass
+    : public mlir::xt::impl::XTSerializeBase<XTSerializePass> {
 public:
   void runOnOperation() override {
     func::FuncOp func = getOperation();
 
     auto grid = func->getAttrOfType<DenseI32ArrayAttr>("xt.grid");
     if (!grid) {
-      func.emitOpError("nova-serialize requires func.func xt.grid attribute");
+      func.emitOpError("xt-serialize requires func.func xt.grid attribute");
       signalPassFailure();
       return;
     }
     if (func.getNumResults() != 0) {
-      func.emitOpError("nova-serialize only supports void functions");
+      func.emitOpError("xt-serialize only supports void functions");
       signalPassFailure();
       return;
     }
     if (!func.getBody().hasOneBlock()) {
-      func.emitOpError("nova-serialize only supports single-block functions");
+      func.emitOpError("xt-serialize only supports single-block functions");
       signalPassFailure();
       return;
     }
@@ -46,7 +45,7 @@ public:
     Block &entry = func.getBody().front();
     auto returnOp = dyn_cast<func::ReturnOp>(entry.getTerminator());
     if (!returnOp || returnOp.getNumOperands() != 0) {
-      func.emitOpError("nova-serialize only supports void functions");
+      func.emitOpError("xt-serialize only supports void functions");
       signalPassFailure();
       return;
     }
@@ -130,7 +129,7 @@ public:
           auto pendingIt = pendingFrees.find(BlockKey{x, y, z});
           if (pendingIt != pendingFrees.end()) {
             for (Value value : pendingIt->second)
-              builder.create<nova::FreeOp>(func.getLoc(), value);
+              builder.create<xt::FreeOp>(func.getLoc(), value);
           }
         }
       }
@@ -142,6 +141,6 @@ public:
 };
 } // namespace
 
-std::unique_ptr<Pass> mlir::nova::createNovaSerializePass() {
-  return std::make_unique<NovaSerializePass>();
+std::unique_ptr<Pass> mlir::xt::createXTSerializePass() {
+  return std::make_unique<XTSerializePass>();
 }

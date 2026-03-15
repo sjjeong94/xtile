@@ -1,7 +1,6 @@
 add_mlir_dialect_library(MLIRNova
   NovaDialect.cpp
   NovaOptimize.cpp
-  NovaSerialize.cpp
   NovaOps.cpp
 
   ADDITIONAL_HEADER_DIRS

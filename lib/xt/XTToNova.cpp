@@ -63,6 +63,31 @@ static FailureOr<float> extractConstantFloat(Value value) {
   return floatAttr.getValueAsDouble();
 }
 
+static FailureOr<int64_t> extractConstantInt(Value value) {
+  auto constant = value.getDefiningOp<arith::ConstantOp>();
+  if (!constant)
+    return failure();
+
+  Attribute attr = constant.getValue();
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+    return intAttr.getInt();
+
+  return failure();
+}
+
+static FailureOr<DenseI64ArrayAttr>
+extractConstantIndices(MLIRContext *context, ValueRange values) {
+  SmallVector<int64_t> indices;
+  indices.reserve(values.size());
+  for (Value value : values) {
+    FailureOr<int64_t> index = extractConstantInt(value);
+    if (failed(index))
+      return failure();
+    indices.push_back(*index);
+  }
+  return DenseI64ArrayAttr::get(context, indices);
+}
+
 template <typename OpTy>
 struct BinaryOpToNovaPattern : OpRewritePattern<OpTy> {
   using OpRewritePattern<OpTy>::OpRewritePattern;
@@ -176,6 +201,69 @@ struct MatmulOpToNovaPattern : OpRewritePattern<xt::MatmulOp> {
   }
 };
 
+struct LoadOpToNovaPattern : OpRewritePattern<xt::LoadOp> {
+  using OpRewritePattern<xt::LoadOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(xt::LoadOp op,
+                                PatternRewriter &rewriter) const override {
+    auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
+    if (!resultType)
+      return failure();
+
+    FailureOr<DenseI64ArrayAttr> indexAttr =
+        extractConstantIndices(rewriter.getContext(), op.getCoords());
+    if (failed(indexAttr))
+      return failure();
+
+    OperationState state(op.getLoc(), "nova.load");
+    state.addOperands(op.getSource());
+    state.addTypes(resultType);
+    state.addAttribute("index", *indexAttr);
+    if (auto shared = op.getSharedAttr())
+      state.addAttribute("shared", shared);
+
+    Operation *novaOp = rewriter.create(state);
+    rewriter.replaceOp(op, novaOp->getResults());
+    return success();
+  }
+};
+
+struct StoreOpToNovaPattern : OpRewritePattern<xt::StoreOp> {
+  using OpRewritePattern<xt::StoreOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(xt::StoreOp op,
+                                PatternRewriter &rewriter) const override {
+    FailureOr<DenseI64ArrayAttr> indexAttr =
+        extractConstantIndices(rewriter.getContext(), op.getCoords());
+    if (failed(indexAttr))
+      return failure();
+
+    OperationState state(op.getLoc(), "nova.store");
+    state.addOperands({op.getValue(), op.getDest()});
+    state.addAttribute("index", *indexAttr);
+
+    Operation *novaOp = rewriter.create(state);
+    rewriter.eraseOp(op);
+    (void)novaOp;
+    return success();
+  }
+};
+
+struct FreeOpToNovaPattern : OpRewritePattern<xt::FreeOp> {
+  using OpRewritePattern<xt::FreeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(xt::FreeOp op,
+                                PatternRewriter &rewriter) const override {
+    OperationState state(op.getLoc(), "nova.free");
+    state.addOperands(op.getInput());
+
+    Operation *novaOp = rewriter.create(state);
+    rewriter.eraseOp(op);
+    (void)novaOp;
+    return success();
+  }
+};
+
 template <>
 int32_t BinaryOpToNovaPattern<xt::AddOp>::getMode() {
   return 1;
@@ -208,9 +296,12 @@ public:
     patterns.add<BinaryOpToNovaPattern<xt::AddOp>,
                  BinaryOpToNovaPattern<xt::MulOp>,
                  BinaryOpToNovaPattern<xt::SubOp>,
+                 LoadOpToNovaPattern,
                  MatmulOpToNovaPattern,
                  ReduceOpToNovaPattern<xt::ReduceSumOp>,
-                 ReduceOpToNovaPattern<xt::ReduceMaxOp>>(&getContext());
+                 ReduceOpToNovaPattern<xt::ReduceMaxOp>,
+                 FreeOpToNovaPattern,
+                 StoreOpToNovaPattern>(&getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
       signalPassFailure();

@@ -69,6 +69,12 @@ class XT_UnaryElementwiseOp<string mnemonic, string summaryText> :
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
+def XT_FreeOp : XT_Op<"free"> {
+  let summary = "lifetime marker for releasing a tensor tile";
+  let arguments = (ins XT_RankedTensor:$input);
+  let assemblyFormat = "`(` $input `)` attr-dict `:` type($input)";
+}
+
 def XT_ExpOp : XT_UnaryElementwiseOp<"exp", "elementwise tile exp">;
 def XT_CosOp : XT_UnaryElementwiseOp<"cos", "elementwise tile cos">;
 def XT_SinOp : XT_UnaryElementwiseOp<"sin", "elementwise tile sin">;

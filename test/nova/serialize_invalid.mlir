@@ -1,4 +1,4 @@
-// RUN: not xt-opt --nova-serialize --split-input-file %s 2>&1 | FileCheck %s --check-prefix=ERR
+// RUN: not xt-opt --xt-serialize --split-input-file %s 2>&1 | FileCheck %s --check-prefix=ERR
 
 func.func @missing_grid(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) {
   %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
@@ -7,7 +7,7 @@ func.func @missing_grid(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) {
   func.return
 }
 
-// ERR: nova-serialize requires func.func xt.grid attribute
+// ERR: xt-serialize requires func.func xt.grid attribute
 
 // -----
 
@@ -16,7 +16,7 @@ func.func @non_void(%src: memref<128x16xf32>) -> i32 attributes {xt.grid = array
   func.return %bid#0 : i32
 }
 
-// ERR: nova-serialize only supports void functions
+// ERR: xt-serialize only supports void functions
 
 // -----
 
@@ -28,4 +28,4 @@ func.func @multi_block(%flag: i1) attributes {xt.grid = array<i32: 1, 1, 1>} {
   func.return
 }
 
-// ERR: nova-serialize only supports single-block functions
+// ERR: xt-serialize only supports single-block functions

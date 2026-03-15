@@ -42,6 +42,11 @@ func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>} {
   func.return
 }
 
+func.func @free_op(%arg0: tensor<16x16xf32>) {
+  xt.free(%arg0) : tensor<16x16xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @generic_tile_ops
 // CHECK: %[[X:.*]], %[[Y:.*]], %[[Z:.*]] = xt.get_tile_block_id : i32, i32, i32
 // CHECK: %[[ZERO:.*]] = arith.constant 0 : i32
@@ -66,3 +71,5 @@ func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>} {
 // CHECK: %[[TRANSPOSE:.*]] = xt.transpose(%[[RESHAPE0]]) : tensor<2x32x16xf32> -> tensor<2x16x32xf32>
 // CHECK: %[[RESHAPE1:.*]] = xt.reshape(%[[TRANSPOSE]]) : tensor<2x16x32xf32> -> tensor<64x16xf32>
 // CHECK-LABEL: func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>}
+// CHECK-LABEL: func.func @free_op
+// CHECK: xt.free(%arg0) : tensor<16x16xf32>

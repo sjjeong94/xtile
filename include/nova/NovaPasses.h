@@ -8,7 +8,6 @@
 namespace mlir::nova {
 
 std::unique_ptr<Pass> createNovaOptimizePass();
-std::unique_ptr<Pass> createNovaSerializePass();
 
 #define GEN_PASS_DECL
 #include "nova/NovaPasses.h.inc"

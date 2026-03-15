@@ -1,4 +1,4 @@
-// RUN: xt-opt --nova-serialize %s | FileCheck %s
+// RUN: xt-opt --xt-serialize %s | FileCheck %s
 
 func.func @serialize_grid(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.grid = array<i32: 2, 2, 1>} {
   %bid0:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
@@ -94,7 +94,7 @@ func.func @serialize_double_buffer_shared_xy(%src: memref<128x16xf32>, %dst: mem
 // CHECK: xt.store(%[[DBX0]], %arg1, %{{.*}}, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
 // CHECK: %[[DBX1:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
 // CHECK: xt.store(%[[DBX1]], %arg1, %{{.*}}, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
-// CHECK: nova.free(%[[DBX0]]) : tensor<16x16xf32>
+// CHECK: xt.free(%[[DBX0]]) : tensor<16x16xf32>
 
 // CHECK-LABEL: func.func @serialize_double_buffer_shared_x
 // CHECK: %[[DBS0:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) {shared = 1 : i64}
@@ -102,7 +102,7 @@ func.func @serialize_double_buffer_shared_xy(%src: memref<128x16xf32>, %dst: mem
 // CHECK: xt.store(%[[DBS0]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: %[[DBS1:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) {shared = 1 : i64}
 // CHECK: xt.store(%[[DBS1]], %arg1, %{{.*}}, %{{.*}})
-// CHECK: nova.free(%[[DBS0]]) : tensor<16x16xf32>
+// CHECK: xt.free(%[[DBS0]]) : tensor<16x16xf32>
 // CHECK: xt.store(%[[DBS1]], %arg1, %{{.*}}, %{{.*}})
 
 // CHECK-LABEL: func.func @serialize_double_buffer_shared_xy
@@ -113,7 +113,7 @@ func.func @serialize_double_buffer_shared_xy(%src: memref<128x16xf32>, %dst: mem
 // CHECK: xt.store(%[[DBZ0]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: %[[DBZ1:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) {shared = 2 : i64}
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
-// CHECK: nova.free(%[[DBZ0]]) : tensor<16x16xf32>
+// CHECK: xt.free(%[[DBZ0]]) : tensor<16x16xf32>
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})

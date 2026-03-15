@@ -7,6 +7,7 @@ include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 def Nova_RankedTensor : RankedTensorOf<[AnyType]>;
+def Nova_RankedMemRef : MemRefOf<[AnyType]>;
 
 class Nova_Op<string mnemonic, list<Trait> traits = []> :
     Op<NovaDialect, mnemonic, traits>;
@@ -25,6 +26,28 @@ class Nova_VoidUnaryTensorOp<string mnemonic, string summaryText> :
   let summary = summaryText;
   let arguments = (ins Nova_RankedTensor:$input);
   let assemblyFormat = "`(` $input `)` attr-dict `:` type($input)";
+}
+
+def Nova_LoadOp : Nova_Op<"load"> {
+  let summary = "load a tensor tile from a memref using constant tile indices";
+  let arguments = (ins Nova_RankedMemRef:$source,
+                       DenseI64ArrayAttr:$index,
+                       OptionalAttr<I64Attr>:$shared);
+  let results = (outs Nova_RankedTensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $source `)` attr-dict `:` type($source) `->` type($result)";
+}
+
+def Nova_StoreOp : Nova_Op<"store"> {
+  let summary = "store a tensor tile to a memref using constant tile indices";
+  let arguments = (ins Nova_RankedTensor:$value,
+                       Nova_RankedMemRef:$dest,
+                       DenseI64ArrayAttr:$index,
+                       OptionalAttr<I64Attr>:$shared);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $value `,` $dest `)` attr-dict `:` functional-type(operands, results)";
 }
 
 class Nova_BinaryTensorOp<string mnemonic, string summaryText> :
