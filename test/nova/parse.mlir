@@ -5,6 +5,14 @@ func.func @parse_square(%arg0: tensor<16x16xf32>) -> tensor<16x16xf32> {
   func.return %0 : tensor<16x16xf32>
 }
 
+func.func @parse_free(%arg0: tensor<16x16xf32>) {
+  nova.free(%arg0) : tensor<16x16xf32>
+  func.return
+}
+
 // CHECK-LABEL: func.func @parse_square
 // CHECK: %[[RES:.*]] = nova.square(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK: return %[[RES]] : tensor<16x16xf32>
+// CHECK-LABEL: func.func @parse_free
+// CHECK: nova.free(%arg0) : tensor<16x16xf32>
+// CHECK: return

@@ -22,6 +22,7 @@ def NovaSerialize : Pass<"nova-serialize", "::mlir::func::FuncOp"> {
   }];
   let dependentDialects = [
     "mlir::arith::ArithDialect",
+    "mlir::nova::NovaDialect",
     "mlir::xt::XTDialect"
   ];
 }

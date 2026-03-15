@@ -1,4 +1,5 @@
 #include "nova/NovaPasses.h"
+#include "nova/NovaOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -9,6 +10,7 @@
 
 #include <map>
 #include <tuple>
+#include <vector>
 
 namespace mlir::nova {
 #define GEN_PASS_DEF_NOVASERIALIZE
@@ -58,7 +60,14 @@ public:
       return builder.create<arith::ConstantIntOp>(loc, value, 32).getResult();
     };
 
+    auto doubleBuffering =
+        func->getAttrOfType<IntegerAttr>("xt.double_buffering");
+    bool doubleBufferingEnabled =
+        doubleBuffering && doubleBuffering.getInt() == 1;
+
+    using BlockKey = std::tuple<int32_t, int32_t, int32_t>;
     std::map<std::tuple<Operation *, int32_t, int32_t>, Value> sharedLoads;
+    std::map<BlockKey, std::vector<Value>> pendingFrees;
     int32_t gridX = grid[0];
     int32_t gridY = grid[1];
     int32_t gridZ = grid[2];
@@ -95,10 +104,33 @@ public:
                 Value result = cloned->getResult(0);
                 sharedLoads.emplace(key, result);
                 mapper.map(loadOp.getResult(), result);
+                if (doubleBufferingEnabled) {
+                  if (shared.getInt() == 1 && y + 1 < gridY) {
+                    BlockKey freeBlock{x, y + 1, z};
+                    pendingFrees[freeBlock].push_back(result);
+                  } else if (shared.getInt() == 2 && z + 1 < gridZ) {
+                    BlockKey freeBlock{x, y, z + 1};
+                    pendingFrees[freeBlock].push_back(result);
+                  }
+                }
                 continue;
               }
             }
-            builder.clone(*op, mapper);
+            Operation *cloned = builder.clone(*op, mapper);
+            if (doubleBufferingEnabled) {
+              if (auto loadOp = dyn_cast<xt::LoadOp>(op)) {
+                if (!loadOp.getSharedAttr() && x + 1 < gridX) {
+                  BlockKey freeBlock{x + 1, y, z};
+                  pendingFrees[freeBlock].push_back(cloned->getResult(0));
+                }
+              }
+            }
+          }
+
+          auto pendingIt = pendingFrees.find(BlockKey{x, y, z});
+          if (pendingIt != pendingFrees.end()) {
+            for (Value value : pendingIt->second)
+              builder.create<nova::FreeOp>(func.getLoc(), value);
           }
         }
       }

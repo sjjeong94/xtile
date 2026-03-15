@@ -20,6 +20,13 @@ class Nova_UnaryTensorOp<string mnemonic, string summaryText> :
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
+class Nova_VoidUnaryTensorOp<string mnemonic, string summaryText> :
+    Nova_Op<mnemonic> {
+  let summary = summaryText;
+  let arguments = (ins Nova_RankedTensor:$input);
+  let assemblyFormat = "`(` $input `)` attr-dict `:` type($input)";
+}
+
 class Nova_BinaryTensorOp<string mnemonic, string summaryText> :
     Nova_Op<mnemonic, [Pure]> {
   let summary = summaryText;
@@ -68,5 +75,8 @@ def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {
   let assemblyFormat =
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
+
+def Nova_FreeOp : Nova_VoidUnaryTensorOp<
+    "free", "lifetime marker for releasing a hardware tile tensor">;
 
 #endif // NOVA_OPS
