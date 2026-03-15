@@ -7,6 +7,7 @@ def XTDialect : Dialect {
   let name = "xt";
   let cppNamespace = "::mlir::xt";
   let summary = "xTile tile-level dialect";
+  let hasOperationAttrVerify = 1;
   let description = [{
     The xt dialect models tile-level NPU operations over global-memory memrefs
     and local tile tensors.

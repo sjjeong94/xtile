@@ -117,3 +117,18 @@ func.func @bad_transpose_shape(%arg0: tensor<2x32x16xf32>) -> tensor<2x32x16xf32
 }
 
 // ERR: transpose result shape must preserve dim 0 and swap dims 1 and 2
+
+// -----
+
+func.func @bad_grid_rank() attributes {xt.grid = array<i32: 32, 8>} {
+  func.return
+}
+
+// ERR: xt.grid must have exactly 3 entries
+
+// -----
+
+module attributes {xt.grid = array<i32: 1, 1, 1>} {
+}
+
+// ERR: xt.grid is only valid on func.func operations

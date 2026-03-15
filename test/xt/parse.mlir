@@ -32,6 +32,10 @@ func.func @generic_reshape_transpose(%arg0: tensor<64x16xf32>) -> tensor<64x16xf
   func.return %2 : tensor<64x16xf32>
 }
 
+func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>} {
+  func.return
+}
+
 // CHECK-LABEL: func.func @generic_tile_ops
 // CHECK: %[[X:.*]], %[[Y:.*]], %[[Z:.*]] = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
 // CHECK: %[[ZERO:.*]] = arith.constant 0 : i32
@@ -52,3 +56,4 @@ func.func @generic_reshape_transpose(%arg0: tensor<64x16xf32>) -> tensor<64x16xf
 // CHECK: %[[RESHAPE0:.*]] = "xt.reshape"(%arg0) : (tensor<64x16xf32>) -> tensor<2x32x16xf32>
 // CHECK: %[[TRANSPOSE:.*]] = "xt.transpose"(%[[RESHAPE0]]) : (tensor<2x32x16xf32>) -> tensor<2x16x32xf32>
 // CHECK: %[[RESHAPE1:.*]] = "xt.reshape"(%[[TRANSPOSE]]) : (tensor<2x16x32xf32>) -> tensor<64x16xf32>
+// CHECK-LABEL: func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>}
