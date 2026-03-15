@@ -1,5 +1,6 @@
 add_mlir_dialect_library(MLIRXT
   XTDialect.cpp
+  XTLiveness.cpp
   XTOps.cpp
   XTToNova.cpp
 

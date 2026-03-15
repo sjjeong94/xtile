@@ -8,6 +8,7 @@
 namespace mlir::xt {
 
 std::unique_ptr<Pass> createXTToNovaPass();
+std::unique_ptr<Pass> createXTLivenessPass();
 
 #define GEN_PASS_DECL
 #include "xt/XTPasses.h.inc"

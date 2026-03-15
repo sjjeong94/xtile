@@ -14,4 +14,12 @@ def XTToNova : Pass<"xt-to-nova", "::mlir::func::FuncOp"> {
   ];
 }
 
+def XTLiveness : Pass<"xt-liveness", "::mlir::func::FuncOp"> {
+  let summary = "Print block-local SSA liveness information";
+  let description = [{
+    Computes a simple backward liveness analysis within each block of a
+    function and prints live-in/live-out sets for each operation.
+  }];
+}
+
 #endif // XT_PASS
