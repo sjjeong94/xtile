@@ -49,11 +49,11 @@ func.func @bad_mma_acc_type(%a: tensor<16x32xi8>, %b: tensor<32x8xi8>, %acc: ten
 
 func.func @bad_shared_hint(%arg0: memref<256x512xi8>) {
   %zero = arith.constant 0 : i32
-  %0 = "xt.load"(%arg0, %zero, %zero) <{shared = 2 : i64}> : (memref<256x512xi8>, i32, i32) -> tensor<256x64xi8>
+  %0 = "xt.load"(%arg0, %zero, %zero) <{shared = 3 : i64}> : (memref<256x512xi8>, i32, i32) -> tensor<256x64xi8>
   func.return
 }
 
-// ERR: shared attribute must be 0 or 1
+// ERR: shared attribute must be 0, 1, or 2
 
 // -----
 

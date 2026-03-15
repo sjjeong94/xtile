@@ -32,8 +32,9 @@ LogicalResult LoadOp::verify() {
   if (getCoords().empty())
     return emitOpError("requires at least one coordinate");
   if (auto shared = getSharedAttr();
-      shared && shared.getInt() != 0 && shared.getInt() != 1)
-    return emitOpError("shared attribute must be 0 or 1");
+      shared && shared.getInt() != 0 && shared.getInt() != 1 &&
+      shared.getInt() != 2)
+    return emitOpError("shared attribute must be 0, 1, or 2");
   if (static_cast<int64_t>(getCoords().size()) != tensorType.getRank())
     return emitOpError("coordinate count must match tensor rank");
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
