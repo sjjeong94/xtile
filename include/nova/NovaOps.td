@@ -11,17 +11,28 @@ def Nova_RankedTensor : RankedTensorOf<[AnyType]>;
 class Nova_Op<string mnemonic, list<Trait> traits = []> :
     Op<NovaDialect, mnemonic, traits>;
 
+class Nova_UnaryTensorOp<string mnemonic, string summaryText> :
+    Nova_Op<mnemonic, [Pure]> {
+  let summary = summaryText;
+  let arguments = (ins Nova_RankedTensor:$input);
+  let results = (outs Nova_RankedTensor:$result);
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+}
+
 class Nova_BinaryTensorOp<string mnemonic, string summaryText> :
     Nova_Op<mnemonic, [Pure]> {
   let summary = summaryText;
   let arguments = (ins Nova_RankedTensor:$lhs,
                        Nova_RankedTensor:$rhs,
                        I32Attr:$mode,
-                       F32Attr:$lhs_s,
+                       F32Attr:$lhs_a,
                        F32Attr:$lhs_b,
-                       F32Attr:$rhs_s,
+                       F32Attr:$rhs_a,
                        F32Attr:$rhs_b);
   let results = (outs Nova_RankedTensor:$result);
+  let assemblyFormat =
+      "`(` $lhs `,` $rhs `)` attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
 }
 
 def Nova_ElementwiseOp : Nova_BinaryTensorOp<
@@ -34,19 +45,28 @@ def Nova_ScalarOp : Nova_Op<"scalar", [Pure]> {
   let summary = "hardware tile tensor-scalar binary op";
   let arguments = (ins Nova_RankedTensor:$input, I32Attr:$mode, F32Attr:$rhs);
   let results = (outs Nova_RankedTensor:$result);
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
+
+def Nova_SquareOp : Nova_UnaryTensorOp<
+    "square", "hardware tile unary square op">;
 
 def Nova_MatmulOp : Nova_Op<"matmul", [Pure]> {
   let summary = "hardware tile matmul op";
   let arguments = (ins Nova_RankedTensor:$lhs, Nova_RankedTensor:$rhs,
                        Nova_RankedTensor:$scale, Nova_RankedTensor:$bias);
   let results = (outs Nova_RankedTensor:$result);
+  let assemblyFormat =
+      "`(` $lhs `,` $rhs `,` $scale `,` $bias `)` attr-dict `:` type($lhs) `,` type($rhs) `,` type($scale) `,` type($bias) `->` type($result)";
 }
 
 def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {
   let summary = "hardware tile reduction op";
   let arguments = (ins Nova_RankedTensor:$input, I32Attr:$mode);
   let results = (outs Nova_RankedTensor:$result);
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
 #endif // NOVA_OPS

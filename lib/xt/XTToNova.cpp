@@ -74,6 +74,17 @@ struct BinaryOpToNovaPattern : OpRewritePattern<OpTy> {
     auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
     if (!lhsType || !rhsType || !resultType)
       return failure();
+    if constexpr (std::is_same_v<OpTy, xt::MulOp>) {
+      if (op.getLhs() == op.getRhs()) {
+        OperationState state(op.getLoc(), "nova.square");
+        state.addOperands(op.getLhs());
+        state.addTypes(resultType);
+
+        Operation *novaOp = rewriter.create(state);
+        rewriter.replaceOp(op, novaOp->getResults());
+        return success();
+      }
+    }
     FailureOr<float> rhsConstant = extractConstantFloat(op.getRhs());
     if (succeeded(rhsConstant)) {
       auto [mode, rhsValue] = normalizeScalarModeAndRhs(getMode(), *rhsConstant);
@@ -99,9 +110,9 @@ struct BinaryOpToNovaPattern : OpRewritePattern<OpTy> {
     state.addOperands({op.getLhs(), op.getRhs()});
     state.addTypes(resultType);
     state.addAttribute("mode", buildModeAttr(rewriter.getContext(), getMode()));
-    state.addAttribute("lhs_s", buildFloatAttr(rewriter.getContext(), 1.0f));
+    state.addAttribute("lhs_a", buildFloatAttr(rewriter.getContext(), 1.0f));
     state.addAttribute("lhs_b", buildFloatAttr(rewriter.getContext(), 0.0f));
-    state.addAttribute("rhs_s", buildFloatAttr(rewriter.getContext(), 1.0f));
+    state.addAttribute("rhs_a", buildFloatAttr(rewriter.getContext(), 1.0f));
     state.addAttribute("rhs_b", buildFloatAttr(rewriter.getContext(), 0.0f));
 
     Operation *novaOp = rewriter.create(state);

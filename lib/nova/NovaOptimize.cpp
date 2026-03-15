@@ -81,9 +81,9 @@ struct FoldScalarIntoBinaryPattern : OpRewritePattern<OpTy> {
     Value lhs = op.getLhs();
     Value rhs = op.getRhs();
 
-    float lhsScale = getFloatAttr(op, "lhs_s");
+    float lhsScale = getFloatAttr(op, "lhs_a");
     float lhsBias = getFloatAttr(op, "lhs_b");
-    float rhsScale = getFloatAttr(op, "rhs_s");
+    float rhsScale = getFloatAttr(op, "rhs_a");
     float rhsBias = getFloatAttr(op, "rhs_b");
 
     bool changed = false;
@@ -108,10 +108,10 @@ struct FoldScalarIntoBinaryPattern : OpRewritePattern<OpTy> {
     state.addOperands({lhs, rhs});
     state.addTypes(op.getResult().getType());
     state.addAttribute("lhs_b", makeFloatAttr(rewriter.getContext(), lhsBias));
-    state.addAttribute("lhs_s", makeFloatAttr(rewriter.getContext(), lhsScale));
+    state.addAttribute("lhs_a", makeFloatAttr(rewriter.getContext(), lhsScale));
     state.addAttribute("mode", op->getAttr("mode"));
     state.addAttribute("rhs_b", makeFloatAttr(rewriter.getContext(), rhsBias));
-    state.addAttribute("rhs_s", makeFloatAttr(rewriter.getContext(), rhsScale));
+    state.addAttribute("rhs_a", makeFloatAttr(rewriter.getContext(), rhsScale));
 
     Operation *newOp = rewriter.create(state);
     rewriter.replaceOp(op, newOp->getResults());
@@ -184,8 +184,8 @@ struct FoldBroadcastMulIntoMatmulPattern
         *biasValue != 0.0f)
       return failure();
 
-    if (!isFloatAttrValue(op, "lhs_s", 1.0f) || !isFloatAttrValue(op, "lhs_b", 0.0f) ||
-        !isFloatAttrValue(op, "rhs_s", 1.0f) || !isFloatAttrValue(op, "rhs_b", 0.0f))
+    if (!isFloatAttrValue(op, "lhs_a", 1.0f) || !isFloatAttrValue(op, "lhs_b", 0.0f) ||
+        !isFloatAttrValue(op, "rhs_a", 1.0f) || !isFloatAttrValue(op, "rhs_b", 0.0f))
       return failure();
 
     OperationState state(op.getLoc(), "nova.matmul");
@@ -217,9 +217,9 @@ struct FoldBroadcastAddIntoMatmulPattern
     if (failed(biasValue) || *biasValue != 0.0f)
       return failure();
 
-    if (!isFloatAttrValue(op, "lhs_s", 1.0f) ||
+    if (!isFloatAttrValue(op, "lhs_a", 1.0f) ||
         !isFloatAttrValue(op, "lhs_b", 0.0f) ||
-        !isFloatAttrValue(op, "rhs_s", 1.0f) ||
+        !isFloatAttrValue(op, "rhs_a", 1.0f) ||
         !isFloatAttrValue(op, "rhs_b", 0.0f))
       return failure();
 

@@ -15,6 +15,7 @@ class XT_Op<string mnemonic, list<Trait> traits = []> :
 def XT_GetTileBlockIdOp : XT_Op<"get_tile_block_id", [Pure]> {
   let summary = "query the current tile block id";
   let results = (outs I32:$x, I32:$y, I32:$z);
+  let assemblyFormat = "attr-dict `:` type($x) `,` type($y) `,` type($z)";
 }
 
 def XT_LoadOp : XT_Op<"load"> {
@@ -24,6 +25,8 @@ def XT_LoadOp : XT_Op<"load"> {
                        OptionalAttr<I64Attr>:$shared);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $source `,` $coords `)` attr-dict `:` functional-type(operands, results)";
 }
 
 def XT_StoreOp : XT_Op<"store"> {
@@ -32,30 +35,29 @@ def XT_StoreOp : XT_Op<"store"> {
                        XT_RankedMemRef:$dest,
                        Variadic<XT_AnyCoord>:$coords);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $value `,` $dest `,` $coords `)` attr-dict `:` functional-type(operands, results)";
 }
 
-def XT_AddOp : XT_Op<"add", [Pure]> {
-  let summary = "elementwise tile add";
+class XT_BinaryElementwiseOp<string mnemonic, string summaryText> :
+    XT_Op<mnemonic, [Pure]> {
+  let summary = summaryText;
   let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $lhs `,` $rhs `)` attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
+}
+
+def XT_AddOp : XT_BinaryElementwiseOp<"add", "elementwise tile add"> {
   let hasCanonicalizer = 1;
 }
 
-def XT_SubOp : XT_Op<"sub", [Pure]> {
-  let summary = "elementwise tile sub";
-  let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs);
-  let results = (outs XT_RankedTensor:$result);
-  let hasVerifier = 1;
+def XT_SubOp : XT_BinaryElementwiseOp<"sub", "elementwise tile sub"> {
   let hasCanonicalizer = 1;
 }
 
-def XT_MulOp : XT_Op<"mul", [Pure]> {
-  let summary = "elementwise tile mul";
-  let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs);
-  let results = (outs XT_RankedTensor:$result);
-  let hasVerifier = 1;
-}
+def XT_MulOp : XT_BinaryElementwiseOp<"mul", "elementwise tile mul">;
 
 class XT_UnaryElementwiseOp<string mnemonic, string summaryText> :
     XT_Op<mnemonic, [Pure]> {
@@ -63,6 +65,8 @@ class XT_UnaryElementwiseOp<string mnemonic, string summaryText> :
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
 def XT_ExpOp : XT_UnaryElementwiseOp<"exp", "elementwise tile exp">;
@@ -79,6 +83,8 @@ def XT_MatmulOp : XT_Op<"matmul", [Pure]> {
   let arguments = (ins XT_RankedTensor:$lhs, XT_RankedTensor:$rhs);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $lhs `,` $rhs `)` attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
 }
 
 def XT_MMAOp : XT_Op<"mma", [Pure]> {
@@ -87,6 +93,8 @@ def XT_MMAOp : XT_Op<"mma", [Pure]> {
                        XT_RankedTensor:$acc);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $lhs `,` $rhs `,` $acc `)` attr-dict `:` type($lhs) `,` type($rhs) `,` type($acc) `->` type($result)";
 }
 
 def XT_Conv2DOp : XT_Op<"conv2d", [Pure]> {
@@ -97,6 +105,8 @@ def XT_Conv2DOp : XT_Op<"conv2d", [Pure]> {
                        DenseI64ArrayAttr:$dilation);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `,` $filter `)` attr-dict `:` type($input) `,` type($filter) `->` type($result)";
 }
 
 def XT_DepthwiseConv2DOp : XT_Op<"depthwise_conv2d", [Pure]> {
@@ -107,27 +117,31 @@ def XT_DepthwiseConv2DOp : XT_Op<"depthwise_conv2d", [Pure]> {
                        DenseI64ArrayAttr:$dilation);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `,` $filter `)` attr-dict `:` type($input) `,` type($filter) `->` type($result)";
 }
 
-def XT_ReduceSumOp : XT_Op<"reduce_sum", [Pure]> {
-  let summary = "reduce the last dimension by sum";
+class XT_ReduceOp<string mnemonic, string summaryText> :
+    XT_Op<mnemonic, [Pure]> {
+  let summary = summaryText;
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
-def XT_ReduceMaxOp : XT_Op<"reduce_max", [Pure]> {
-  let summary = "reduce the last dimension by max";
-  let arguments = (ins XT_RankedTensor:$input);
-  let results = (outs XT_RankedTensor:$result);
-  let hasVerifier = 1;
-}
+def XT_ReduceSumOp : XT_ReduceOp<"reduce_sum", "reduce the last dimension by sum">;
+
+def XT_ReduceMaxOp : XT_ReduceOp<"reduce_max", "reduce the last dimension by max">;
 
 def XT_ReshapeOp : XT_Op<"reshape", [Pure]> {
   let summary = "reshape a tensor tile";
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
 def XT_TransposeOp : XT_Op<"transpose", [Pure]> {
@@ -135,6 +149,8 @@ def XT_TransposeOp : XT_Op<"transpose", [Pure]> {
   let arguments = (ins XT_RankedTensor:$input);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
 #endif // XT_OPS
