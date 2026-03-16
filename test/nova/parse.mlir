@@ -5,6 +5,16 @@ func.func @parse_square(%arg0: tensor<16x16xf32>) -> tensor<16x16xf32> {
   func.return %0 : tensor<16x16xf32>
 }
 
+func.func @parse_rsqrt(%arg0: tensor<16x16xf32>) -> tensor<16x16xf32> {
+  %0 = nova.rsqrt(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
+  func.return %0 : tensor<16x16xf32>
+}
+
+func.func @parse_scalar_fma(%arg0: tensor<16x16xf32>) -> tensor<16x16xf32> {
+  %0 = nova.scalar_fma(%arg0) {a = 2.300000e+00 : f32, b = 3.500000e+00 : f32} : tensor<16x16xf32> -> tensor<16x16xf32>
+  func.return %0 : tensor<16x16xf32>
+}
+
 func.func @parse_free(%arg0: tensor<16x16xf32>) {
   nova.free(%arg0) : tensor<16x16xf32>
   func.return
@@ -19,6 +29,12 @@ func.func @parse_load_store(%arr: memref<128x16xf32>, %tile: tensor<16x16xf32>) 
 // CHECK-LABEL: func.func @parse_square
 // CHECK: %[[RES:.*]] = nova.square(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK: return %[[RES]] : tensor<16x16xf32>
+// CHECK-LABEL: func.func @parse_rsqrt
+// CHECK: %[[RSQRT:.*]] = nova.rsqrt(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: return %[[RSQRT]] : tensor<16x16xf32>
+// CHECK-LABEL: func.func @parse_scalar_fma
+// CHECK: %[[FMA:.*]] = nova.scalar_fma(%arg0) {a = 2.300000e+00 : f32, b = 3.500000e+00 : f32} : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: return %[[FMA]] : tensor<16x16xf32>
 // CHECK-LABEL: func.func @parse_free
 // CHECK: nova.free(%arg0) : tensor<16x16xf32>
 // CHECK: return

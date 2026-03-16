@@ -14,4 +14,16 @@ def NovaOptimize : Pass<"nova-optimize", "::mlir::func::FuncOp"> {
   ];
 }
 
+def NovaAllocate : Pass<"nova-allocate", "::mlir::func::FuncOp"> {
+  let summary = "Allocate addresses for eligible nova tensor values";
+  let description = [{
+    Computes block-local tensor lifetimes, assigns first-fit addresses, and
+    writes each allocated address into the result tensor encoding as a
+    DictionaryAttr.
+  }];
+  let dependentDialects = [
+    "mlir::nova::NovaDialect"
+  ];
+}
+
 #endif // NOVA_PASS

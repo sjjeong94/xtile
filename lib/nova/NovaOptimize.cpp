@@ -164,6 +164,40 @@ struct FoldScalarIntoMatmulPattern : OpRewritePattern<nova::ScalarOp> {
   }
 };
 
+struct FoldScalarMulAddIntoScalarFmaPattern
+    : OpRewritePattern<nova::ScalarOp> {
+  using OpRewritePattern<nova::ScalarOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(nova::ScalarOp op,
+                                PatternRewriter &rewriter) const override {
+    int32_t outerMode = op->getAttrOfType<IntegerAttr>("mode").getInt();
+    if (outerMode != 1)
+      return failure();
+
+    auto innerOp = op.getInput().getDefiningOp<nova::ScalarOp>();
+    if (!innerOp || !innerOp->hasOneUse())
+      return failure();
+
+    int32_t innerMode = innerOp->getAttrOfType<IntegerAttr>("mode").getInt();
+    if (innerMode != 2)
+      return failure();
+
+    OperationState state(op.getLoc(), "nova.scalar_fma");
+    state.addOperands(innerOp.getInput());
+    state.addTypes(op.getResult().getType());
+    state.addAttribute("a",
+                       makeFloatAttr(rewriter.getContext(),
+                                     getFloatAttr(innerOp, "rhs")));
+    state.addAttribute("b",
+                       makeFloatAttr(rewriter.getContext(),
+                                     getFloatAttr(op, "rhs")));
+
+    Operation *newOp = rewriter.create(state);
+    rewriter.replaceOp(op, newOp->getResults());
+    return success();
+  }
+};
+
 struct FoldBroadcastMulIntoMatmulPattern
     : OpRewritePattern<nova::BroadcastOp> {
   using OpRewritePattern<nova::BroadcastOp>::OpRewritePattern;
@@ -241,6 +275,7 @@ public:
     RewritePatternSet patterns(&getContext());
     patterns.add<FoldScalarIntoBinaryPattern<nova::BroadcastOp>,
                  FoldScalarIntoBinaryPattern<nova::ElementwiseOp>,
+                 FoldScalarMulAddIntoScalarFmaPattern,
                  FoldScalarIntoMatmulPattern,
                  FoldBroadcastMulIntoMatmulPattern,
                  FoldBroadcastAddIntoMatmulPattern>(

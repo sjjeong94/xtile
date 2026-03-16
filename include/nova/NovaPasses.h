@@ -7,6 +7,7 @@
 
 namespace mlir::nova {
 
+std::unique_ptr<Pass> createNovaAllocatePass();
 std::unique_ptr<Pass> createNovaOptimizePass();
 
 #define GEN_PASS_DECL

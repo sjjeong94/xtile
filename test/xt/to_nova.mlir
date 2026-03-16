@@ -22,6 +22,11 @@ module {
     return %0 : tensor<16x16xf32>
   }
 
+  func.func @rsqrt(%a: tensor<16x16xf32>) -> tensor<16x16xf32> {
+    %0 = "xt.rsqrt"(%a) : (tensor<16x16xf32>) -> tensor<16x16xf32>
+    return %0 : tensor<16x16xf32>
+  }
+
   func.func @scalar_like_mul(%a: tensor<16x1xf32>, %b: tensor<1x1xf32>) -> tensor<16x1xf32> {
     %0 = "xt.mul"(%a, %b) : (tensor<16x1xf32>, tensor<1x1xf32>) -> tensor<16x1xf32>
     return %0 : tensor<16x1xf32>
@@ -75,6 +80,8 @@ module {
 // CHECK: nova.elementwise(%arg0, %arg1) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 2 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<16x16xf32>, tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @square_mul
 // CHECK: nova.square(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK-LABEL: func.func @rsqrt
+// CHECK: nova.rsqrt(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @scalar_like_mul
 // CHECK: xt.mul(%arg0, %arg1) : tensor<16x1xf32>, tensor<1x1xf32> -> tensor<16x1xf32>
 // CHECK-LABEL: func.func @constant_scalar_mul

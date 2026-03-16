@@ -1,4 +1,5 @@
 add_mlir_dialect_library(MLIRNova
+  NovaAllocate.cpp
   NovaDialect.cpp
   NovaOptimize.cpp
   NovaOps.cpp

@@ -172,6 +172,26 @@ struct ReduceOpToNovaPattern : OpRewritePattern<OpTy> {
   static int32_t getMode();
 };
 
+struct RsqrtOpToNovaPattern : OpRewritePattern<xt::RsqrtOp> {
+  using OpRewritePattern<xt::RsqrtOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(xt::RsqrtOp op,
+                                PatternRewriter &rewriter) const override {
+    auto inputType = dyn_cast<RankedTensorType>(op.getInput().getType());
+    auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
+    if (!inputType || !resultType)
+      return failure();
+
+    OperationState state(op.getLoc(), "nova.rsqrt");
+    state.addOperands(op.getInput());
+    state.addTypes(resultType);
+
+    Operation *novaOp = rewriter.create(state);
+    rewriter.replaceOp(op, novaOp->getResults());
+    return success();
+  }
+};
+
 struct MatmulOpToNovaPattern : OpRewritePattern<xt::MatmulOp> {
   using OpRewritePattern<xt::MatmulOp>::OpRewritePattern;
 
@@ -298,6 +318,7 @@ public:
                  BinaryOpToNovaPattern<xt::SubOp>,
                  LoadOpToNovaPattern,
                  MatmulOpToNovaPattern,
+                 RsqrtOpToNovaPattern,
                  ReduceOpToNovaPattern<xt::ReduceSumOp>,
                  ReduceOpToNovaPattern<xt::ReduceMaxOp>,
                  FreeOpToNovaPattern,

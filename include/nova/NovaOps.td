@@ -79,8 +79,19 @@ def Nova_ScalarOp : Nova_Op<"scalar", [Pure]> {
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
+def Nova_ScalarFmaOp : Nova_Op<"scalar_fma", [Pure]> {
+  let summary = "hardware tile tensor scalar fused multiply-add op";
+  let arguments = (ins Nova_RankedTensor:$input, F32Attr:$a, F32Attr:$b);
+  let results = (outs Nova_RankedTensor:$result);
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+}
+
 def Nova_SquareOp : Nova_UnaryTensorOp<
     "square", "hardware tile unary square op">;
+
+def Nova_RsqrtOp : Nova_UnaryTensorOp<
+    "rsqrt", "hardware tile unary rsqrt op">;
 
 def Nova_MatmulOp : Nova_Op<"matmul", [Pure]> {
   let summary = "hardware tile matmul op";
