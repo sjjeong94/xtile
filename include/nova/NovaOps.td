@@ -21,6 +21,16 @@ class Nova_UnaryTensorOp<string mnemonic, string summaryText> :
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
+class Nova_UnaryCastOp<string mnemonic, string summaryText> :
+    Nova_Op<mnemonic, [Pure]> {
+  let summary = summaryText;
+  let arguments = (ins Nova_RankedTensor:$input);
+  let results = (outs Nova_RankedTensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+}
+
 class Nova_VoidUnaryTensorOp<string mnemonic, string summaryText> :
     Nova_Op<mnemonic> {
   let summary = summaryText;
@@ -92,6 +102,12 @@ def Nova_SquareOp : Nova_UnaryTensorOp<
 
 def Nova_RsqrtOp : Nova_UnaryTensorOp<
     "rsqrt", "hardware tile unary rsqrt op">;
+
+def Nova_IToFOp : Nova_UnaryCastOp<
+    "itof", "hardware tile integer-to-float tensor cast op">;
+
+def Nova_FToIOp : Nova_UnaryCastOp<
+    "ftoi", "hardware tile float-to-integer tensor cast op">;
 
 def Nova_MatmulOp : Nova_Op<"matmul", [Pure]> {
   let summary = "hardware tile matmul op";

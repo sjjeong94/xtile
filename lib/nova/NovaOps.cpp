@@ -18,6 +18,31 @@ static LogicalResult verifyMemRefAndTensor(Operation *op, MemRefType memRefType,
   return success();
 }
 
+static LogicalResult verifyTensorCastTypes(Operation *op, Value input,
+                                           Value result, bool intToFloat) {
+  auto inputType = dyn_cast<RankedTensorType>(input.getType());
+  auto resultType = dyn_cast<RankedTensorType>(result.getType());
+  if (!inputType || !resultType)
+    return op->emitOpError("requires ranked tensor operand and result");
+  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
+    return op->emitOpError("requires statically shaped tensors");
+  if (inputType.getShape() != resultType.getShape())
+    return op->emitOpError("requires operand and result tensor shapes to match");
+
+  Type inputElem = inputType.getElementType();
+  Type resultElem = resultType.getElementType();
+  if (intToFloat) {
+    if (!llvm::isa<IntegerType>(inputElem) || !llvm::isa<FloatType>(resultElem))
+      return op->emitOpError(
+          "requires integer input and floating-point result element types");
+  } else {
+    if (!llvm::isa<FloatType>(inputElem) || !llvm::isa<IntegerType>(resultElem))
+      return op->emitOpError(
+          "requires floating-point input and integer result element types");
+  }
+  return success();
+}
+
 LogicalResult LoadOp::verify() {
   auto tensorType = dyn_cast<RankedTensorType>(getResult().getType());
   auto memRefType = dyn_cast<MemRefType>(getSource().getType());
@@ -44,6 +69,16 @@ LogicalResult StoreOp::verify() {
       shared.getInt() != 2)
     return emitOpError("shared attribute must be 0, 1, or 2");
   return success();
+}
+
+LogicalResult IToFOp::verify() {
+  return verifyTensorCastTypes(*this, getInput(), getResult(),
+                               /*intToFloat=*/true);
+}
+
+LogicalResult FToIOp::verify() {
+  return verifyTensorCastTypes(*this, getInput(), getResult(),
+                               /*intToFloat=*/false);
 }
 
 #define GET_OP_CLASSES

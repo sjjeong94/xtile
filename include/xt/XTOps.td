@@ -69,6 +69,16 @@ class XT_UnaryElementwiseOp<string mnemonic, string summaryText> :
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
+class XT_UnaryCastOp<string mnemonic, string summaryText> :
+    XT_Op<mnemonic, [Pure]> {
+  let summary = summaryText;
+  let arguments = (ins XT_RankedTensor:$input);
+  let results = (outs XT_RankedTensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+}
+
 def XT_FreeOp : XT_Op<"free"> {
   let summary = "lifetime marker for releasing a tensor tile";
   let arguments = (ins XT_RankedTensor:$input);
@@ -83,6 +93,8 @@ def XT_RsqrtOp : XT_UnaryElementwiseOp<"rsqrt", "elementwise tile rsqrt">;
 def XT_SigmoidOp : XT_UnaryElementwiseOp<"sigmoid", "elementwise tile sigmoid">;
 def XT_TanhOp : XT_UnaryElementwiseOp<"tanh", "elementwise tile tanh">;
 def XT_SiluOp : XT_UnaryElementwiseOp<"silu", "elementwise tile silu">;
+def XT_IToFOp : XT_UnaryCastOp<"itof", "convert integer tensor elements to floating point">;
+def XT_FToIOp : XT_UnaryCastOp<"ftoi", "convert floating-point tensor elements to integer">;
 
 def XT_MatmulOp : XT_Op<"matmul", [Pure]> {
   let summary = "tile matrix multiply";

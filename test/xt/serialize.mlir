@@ -1,54 +1,54 @@
 // RUN: xt-opt --xt-serialize %s | FileCheck %s
 
 func.func @serialize_grid(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.grid = array<i32: 2, 2, 1>} {
-  %bid0:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %bid1:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %0 = "xt.load"(%src, %bid0#0, %bid1#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
-  %1 = "xt.exp"(%0) : (tensor<16x16xf32>) -> tensor<16x16xf32>
-  "xt.store"(%1, %dst, %bid1#0, %bid0#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  %bid0:3 = xt.get_tile_block_id : i32, i32, i32
+  %bid1:3 = xt.get_tile_block_id : i32, i32, i32
+  %0 = xt.load(%src, %bid0#0, %bid1#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  %1 = xt.exp(%0) : tensor<16x16xf32> -> tensor<16x16xf32>
+  xt.store(%1, %dst, %bid1#0, %bid0#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
   func.return
 }
 
 func.func @serialize_shared_x(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.grid = array<i32: 2, 2, 1>} {
-  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %0 = "xt.load"(%src, %bid#0, %bid#1) <{shared = 1 : i64}> : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
-  "xt.store"(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  %bid:3 = xt.get_tile_block_id : i32, i32, i32
+  %0 = xt.load(%src, %bid#0, %bid#1) {shared = 1 : i64} : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  xt.store(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
   func.return
 }
 
 func.func @serialize_shared_xy(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.grid = array<i32: 2, 2, 2>} {
-  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %0 = "xt.load"(%src, %bid#0, %bid#1) <{shared = 2 : i64}> : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
-  "xt.store"(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  %bid:3 = xt.get_tile_block_id : i32, i32, i32
+  %0 = xt.load(%src, %bid#0, %bid#1) {shared = 2 : i64} : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  xt.store(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
   func.return
 }
 
 func.func @serialize_double_buffer_x(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.double_buffering = 1 : i32, xt.grid = array<i32: 2, 1, 1>} {
-  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %0 = "xt.load"(%src, %bid#0, %bid#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
-  "xt.store"(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  %bid:3 = xt.get_tile_block_id : i32, i32, i32
+  %0 = xt.load(%src, %bid#0, %bid#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  xt.store(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
   func.return
 }
 
 func.func @serialize_double_buffer_shared_x(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.double_buffering = 1 : i32, xt.grid = array<i32: 2, 2, 1>} {
-  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %0 = "xt.load"(%src, %bid#0, %bid#1) <{shared = 1 : i64}> : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
-  "xt.store"(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  %bid:3 = xt.get_tile_block_id : i32, i32, i32
+  %0 = xt.load(%src, %bid#0, %bid#1) {shared = 1 : i64} : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  xt.store(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
   func.return
 }
 
 func.func @serialize_double_buffer_shared_xy(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.double_buffering = 1 : i32, xt.grid = array<i32: 2, 2, 2>} {
-  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %0 = "xt.load"(%src, %bid#0, %bid#1) <{shared = 2 : i64}> : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
-  "xt.store"(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  %bid:3 = xt.get_tile_block_id : i32, i32, i32
+  %0 = xt.load(%src, %bid#0, %bid#1) {shared = 2 : i64} : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  xt.store(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
   func.return
 }
 
 func.func @serialize_double_buffer_store_value(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.double_buffering = 1 : i32, xt.grid = array<i32: 2, 1, 1>} {
-  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %0 = "xt.load"(%src, %bid#0, %bid#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
-  %1 = "xt.exp"(%0) : (tensor<16x16xf32>) -> tensor<16x16xf32>
-  "xt.store"(%1, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  %bid:3 = xt.get_tile_block_id : i32, i32, i32
+  %0 = xt.load(%src, %bid#0, %bid#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  %1 = xt.exp(%0) : tensor<16x16xf32> -> tensor<16x16xf32>
+  xt.store(%1, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
   func.return
 }
 

@@ -1,14 +1,14 @@
 // RUN: xt-opt --nova-allocate %s | FileCheck %s
 
 func.func @allocate_basic(%src: memref<64x16xf32>, %dst: memref<64x16xf32>) {
-  %0 = "nova.load"(%src) <{index = array<i64: 0, 0>}> : (memref<64x16xf32>) -> tensor<16x16xf32>
-  %1 = "nova.square"(%0) : (tensor<16x16xf32>) -> tensor<16x16xf32>
-  "nova.store"(%1, %dst) <{index = array<i64: 0, 0>}> : (tensor<16x16xf32>, memref<64x16xf32>) -> ()
-  %2 = "nova.load"(%src) <{index = array<i64: 1, 0>}> : (memref<64x16xf32>) -> tensor<16x16xf32>
-  %3 = "nova.square"(%2) : (tensor<16x16xf32>) -> tensor<16x16xf32>
+  %0 = nova.load(%src) {index = array<i64: 0, 0>} : memref<64x16xf32> -> tensor<16x16xf32>
+  %1 = nova.square(%0) : tensor<16x16xf32> -> tensor<16x16xf32>
+  nova.store(%1, %dst) {index = array<i64: 0, 0>} : (tensor<16x16xf32>, memref<64x16xf32>) -> ()
+  %2 = nova.load(%src) {index = array<i64: 1, 0>} : memref<64x16xf32> -> tensor<16x16xf32>
+  %3 = nova.square(%2) : tensor<16x16xf32> -> tensor<16x16xf32>
   %4 = arith.constant dense<1.0> : tensor<1x1xf32>
-  "nova.store"(%3, %dst) <{index = array<i64: 1, 0>}> : (tensor<16x16xf32>, memref<64x16xf32>) -> ()
-  "nova.free"(%3) : (tensor<16x16xf32>) -> ()
+  nova.store(%3, %dst) {index = array<i64: 1, 0>} : (tensor<16x16xf32>, memref<64x16xf32>) -> ()
+  nova.free(%3) : tensor<16x16xf32>
   func.return
 }
 

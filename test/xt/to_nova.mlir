@@ -2,50 +2,50 @@
 
 module {
   func.func @reduce_ops(%a: tensor<16x16xf32>) -> (tensor<16x1xf32>, tensor<16x1xf32>) {
-    %0 = "xt.reduce_sum"(%a) : (tensor<16x16xf32>) -> tensor<16x1xf32>
-    %1 = "xt.reduce_max"(%a) : (tensor<16x16xf32>) -> tensor<16x1xf32>
+    %0 = xt.reduce_sum(%a) : tensor<16x16xf32> -> tensor<16x1xf32>
+    %1 = xt.reduce_max(%a) : tensor<16x16xf32> -> tensor<16x1xf32>
     return %0, %1 : tensor<16x1xf32>, tensor<16x1xf32>
   }
 
   func.func @broadcast_sub(%a: tensor<16x16xf32>, %b: tensor<16x1xf32>) -> tensor<16x16xf32> {
-    %0 = "xt.sub"(%a, %b) : (tensor<16x16xf32>, tensor<16x1xf32>) -> tensor<16x16xf32>
+    %0 = xt.sub(%a, %b) : tensor<16x16xf32>, tensor<16x1xf32> -> tensor<16x16xf32>
     return %0 : tensor<16x16xf32>
   }
 
   func.func @elementwise_mul(%a: tensor<16x16xf32>, %b: tensor<16x16xf32>) -> tensor<16x16xf32> {
-    %0 = "xt.mul"(%a, %b) : (tensor<16x16xf32>, tensor<16x16xf32>) -> tensor<16x16xf32>
+    %0 = xt.mul(%a, %b) : tensor<16x16xf32>, tensor<16x16xf32> -> tensor<16x16xf32>
     return %0 : tensor<16x16xf32>
   }
 
   func.func @square_mul(%a: tensor<16x16xf32>) -> tensor<16x16xf32> {
-    %0 = "xt.mul"(%a, %a) : (tensor<16x16xf32>, tensor<16x16xf32>) -> tensor<16x16xf32>
+    %0 = xt.mul(%a, %a) : tensor<16x16xf32>, tensor<16x16xf32> -> tensor<16x16xf32>
     return %0 : tensor<16x16xf32>
   }
 
   func.func @rsqrt(%a: tensor<16x16xf32>) -> tensor<16x16xf32> {
-    %0 = "xt.rsqrt"(%a) : (tensor<16x16xf32>) -> tensor<16x16xf32>
+    %0 = xt.rsqrt(%a) : tensor<16x16xf32> -> tensor<16x16xf32>
     return %0 : tensor<16x16xf32>
   }
 
   func.func @scalar_like_mul(%a: tensor<16x1xf32>, %b: tensor<1x1xf32>) -> tensor<16x1xf32> {
-    %0 = "xt.mul"(%a, %b) : (tensor<16x1xf32>, tensor<1x1xf32>) -> tensor<16x1xf32>
+    %0 = xt.mul(%a, %b) : tensor<16x1xf32>, tensor<1x1xf32> -> tensor<16x1xf32>
     return %0 : tensor<16x1xf32>
   }
 
   func.func @constant_scalar_mul(%a: tensor<16x16xf32>) -> tensor<16x16xf32> {
     %cst = arith.constant dense<1.250000e-01> : tensor<1x1xf32>
-    %0 = "xt.mul"(%a, %cst) : (tensor<16x16xf32>, tensor<1x1xf32>) -> tensor<16x16xf32>
+    %0 = xt.mul(%a, %cst) : tensor<16x16xf32>, tensor<1x1xf32> -> tensor<16x16xf32>
     return %0 : tensor<16x16xf32>
   }
 
   func.func @constant_scalar_sub(%a: tensor<16x16xf32>) -> tensor<16x16xf32> {
     %cst = arith.constant dense<1.250000e-01> : tensor<1x1xf32>
-    %0 = "xt.sub"(%a, %cst) : (tensor<16x16xf32>, tensor<1x1xf32>) -> tensor<16x16xf32>
+    %0 = xt.sub(%a, %cst) : tensor<16x16xf32>, tensor<1x1xf32> -> tensor<16x16xf32>
     return %0 : tensor<16x16xf32>
   }
 
   func.func @matmul(%a: tensor<16x32xf32>, %b: tensor<32x8xf32>) -> tensor<16x8xf32> {
-    %0 = "xt.matmul"(%a, %b) : (tensor<16x32xf32>, tensor<32x8xf32>) -> tensor<16x8xf32>
+    %0 = xt.matmul(%a, %b) : tensor<16x32xf32>, tensor<32x8xf32> -> tensor<16x8xf32>
     return %0 : tensor<16x8xf32>
   }
 
@@ -68,6 +68,12 @@ module {
   func.func @free_op(%arg0: tensor<16x16xf32>) {
     xt.free(%arg0) : tensor<16x16xf32>
     return
+  }
+
+  func.func @cast_ops(%a: tensor<5x16xi8>, %b: tensor<5x16xf32>) -> (tensor<5x16xf32>, tensor<5x16xi8>) {
+    %0 = xt.itof(%a) : tensor<5x16xi8> -> tensor<5x16xf32>
+    %1 = xt.ftoi(%b) : tensor<5x16xf32> -> tensor<5x16xi8>
+    return %0, %1 : tensor<5x16xf32>, tensor<5x16xi8>
   }
 }
 
@@ -100,3 +106,7 @@ module {
 // CHECK: xt.store(%[[DYNLOAD]], %arg1, %arg2, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
 // CHECK-LABEL: func.func @free_op
 // CHECK: nova.free(%arg0) : tensor<16x16xf32>
+// CHECK-LABEL: func.func @cast_ops
+// CHECK: %[[ITOF:.*]] = nova.itof(%arg0) : tensor<5x16xi8> -> tensor<5x16xf32>
+// CHECK: %[[FTOI:.*]] = nova.ftoi(%arg1) : tensor<5x16xf32> -> tensor<5x16xi8>
+// CHECK: return %[[ITOF]], %[[FTOI]] : tensor<5x16xf32>, tensor<5x16xi8>

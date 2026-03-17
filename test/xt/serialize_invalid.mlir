@@ -1,9 +1,9 @@
 // RUN: not xt-opt --xt-serialize --split-input-file %s 2>&1 | FileCheck %s --check-prefix=ERR
 
 func.func @missing_grid(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) {
-  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
-  %0 = "xt.load"(%src, %bid#0, %bid#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
-  "xt.store"(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  %bid:3 = xt.get_tile_block_id : i32, i32, i32
+  %0 = xt.load(%src, %bid#0, %bid#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  xt.store(%0, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
   func.return
 }
 
@@ -12,7 +12,7 @@ func.func @missing_grid(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) {
 // -----
 
 func.func @non_void(%src: memref<128x16xf32>) -> i32 attributes {xt.grid = array<i32: 1, 1, 1>} {
-  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
+  %bid:3 = xt.get_tile_block_id : i32, i32, i32
   func.return %bid#0 : i32
 }
 

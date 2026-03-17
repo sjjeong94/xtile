@@ -192,6 +192,29 @@ struct RsqrtOpToNovaPattern : OpRewritePattern<xt::RsqrtOp> {
   }
 };
 
+template <typename OpTy>
+struct UnaryCastOpToNovaPattern : OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(OpTy op,
+                                PatternRewriter &rewriter) const override {
+    auto inputType = dyn_cast<RankedTensorType>(op.getInput().getType());
+    auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
+    if (!inputType || !resultType)
+      return failure();
+
+    OperationState state(op.getLoc(), getNovaName());
+    state.addOperands(op.getInput());
+    state.addTypes(resultType);
+
+    Operation *novaOp = rewriter.create(state);
+    rewriter.replaceOp(op, novaOp->getResults());
+    return success();
+  }
+
+  static StringRef getNovaName();
+};
+
 struct MatmulOpToNovaPattern : OpRewritePattern<xt::MatmulOp> {
   using OpRewritePattern<xt::MatmulOp>::OpRewritePattern;
 
@@ -309,6 +332,16 @@ int32_t ReduceOpToNovaPattern<xt::ReduceMaxOp>::getMode() {
   return 1;
 }
 
+template <>
+StringRef UnaryCastOpToNovaPattern<xt::IToFOp>::getNovaName() {
+  return "nova.itof";
+}
+
+template <>
+StringRef UnaryCastOpToNovaPattern<xt::FToIOp>::getNovaName() {
+  return "nova.ftoi";
+}
+
 class XTToNovaPass : public mlir::xt::impl::XTToNovaBase<XTToNovaPass> {
 public:
   void runOnOperation() override {
@@ -319,6 +352,8 @@ public:
                  LoadOpToNovaPattern,
                  MatmulOpToNovaPattern,
                  RsqrtOpToNovaPattern,
+                 UnaryCastOpToNovaPattern<xt::IToFOp>,
+                 UnaryCastOpToNovaPattern<xt::FToIOp>,
                  ReduceOpToNovaPattern<xt::ReduceSumOp>,
                  ReduceOpToNovaPattern<xt::ReduceMaxOp>,
                  FreeOpToNovaPattern,
