@@ -75,17 +75,25 @@ static FailureOr<int64_t> extractConstantInt(Value value) {
   return failure();
 }
 
-static FailureOr<DenseI64ArrayAttr>
-extractConstantIndices(MLIRContext *context, ValueRange values) {
-  SmallVector<int64_t> indices;
-  indices.reserve(values.size());
-  for (Value value : values) {
+static FailureOr<DenseI64ArrayAttr> extractConstantStarts(MLIRContext *context,
+                                                          ValueRange values,
+                                                          RankedTensorType type) {
+  if (!type || !type.hasStaticShape())
+    return failure();
+
+  ArrayRef<int64_t> shape = type.getShape();
+  if (shape.size() != values.size())
+    return failure();
+
+  SmallVector<int64_t> starts;
+  starts.reserve(values.size());
+  for (auto [value, dim] : llvm::zip(values, shape)) {
     FailureOr<int64_t> index = extractConstantInt(value);
     if (failed(index))
       return failure();
-    indices.push_back(*index);
+    starts.push_back(*index * dim);
   }
-  return DenseI64ArrayAttr::get(context, indices);
+  return DenseI64ArrayAttr::get(context, starts);
 }
 
 template <typename OpTy>
@@ -253,15 +261,15 @@ struct LoadOpToNovaPattern : OpRewritePattern<xt::LoadOp> {
     if (!resultType)
       return failure();
 
-    FailureOr<DenseI64ArrayAttr> indexAttr =
-        extractConstantIndices(rewriter.getContext(), op.getCoords());
-    if (failed(indexAttr))
+    FailureOr<DenseI64ArrayAttr> startAttr = extractConstantStarts(
+        rewriter.getContext(), op.getCoords(), resultType);
+    if (failed(startAttr))
       return failure();
 
     OperationState state(op.getLoc(), "nova.load");
     state.addOperands(op.getSource());
     state.addTypes(resultType);
-    state.addAttribute("index", *indexAttr);
+    state.addAttribute("start", *startAttr);
     if (auto shared = op.getSharedAttr())
       state.addAttribute("shared", shared);
 
@@ -276,14 +284,18 @@ struct StoreOpToNovaPattern : OpRewritePattern<xt::StoreOp> {
 
   LogicalResult matchAndRewrite(xt::StoreOp op,
                                 PatternRewriter &rewriter) const override {
-    FailureOr<DenseI64ArrayAttr> indexAttr =
-        extractConstantIndices(rewriter.getContext(), op.getCoords());
-    if (failed(indexAttr))
+    auto valueType = dyn_cast<RankedTensorType>(op.getValue().getType());
+    if (!valueType)
+      return failure();
+
+    FailureOr<DenseI64ArrayAttr> startAttr = extractConstantStarts(
+        rewriter.getContext(), op.getCoords(), valueType);
+    if (failed(startAttr))
       return failure();
 
     OperationState state(op.getLoc(), "nova.store");
     state.addOperands({op.getValue(), op.getDest()});
-    state.addAttribute("index", *indexAttr);
+    state.addAttribute("start", *startAttr);
 
     Operation *novaOp = rewriter.create(state);
     rewriter.eraseOp(op);

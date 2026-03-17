@@ -99,8 +99,8 @@ module {
 // CHECK: %[[BIAS:.*]] = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
 // CHECK: nova.matmul(%arg0, %arg1, %[[SCALE]], %[[BIAS]]) : tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32> -> tensor<16x8xf32>
 // CHECK-LABEL: func.func @load_store_constant_index
-// CHECK: %[[LOAD:.*]] = nova.load(%arg0) {index = array<i64: 0, 2>, shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32>
-// CHECK: nova.store(%[[LOAD]], %arg1) {index = array<i64: 1, 2>} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
+// CHECK: %[[LOAD:.*]] = nova.load(%arg0) {shared = 1 : i64, start = array<i64: 0, 32>} : memref<128x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.store(%[[LOAD]], %arg1) {start = array<i64: 16, 32>} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
 // CHECK-LABEL: func.func @load_store_dynamic_index
 // CHECK: %[[DYNLOAD:.*]] = xt.load(%arg0, %arg2, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
 // CHECK: xt.store(%[[DYNLOAD]], %arg1, %arg2, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()

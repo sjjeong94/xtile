@@ -48,8 +48,8 @@ LogicalResult LoadOp::verify() {
   auto memRefType = dyn_cast<MemRefType>(getSource().getType());
   if (failed(verifyMemRefAndTensor(*this, memRefType, tensorType)))
     return failure();
-  if (static_cast<int64_t>(getIndex().size()) != tensorType.getRank())
-    return emitOpError("index attribute count must match tensor rank");
+  if (static_cast<int64_t>(getStart().size()) != tensorType.getRank())
+    return emitOpError("start attribute count must match tensor rank");
   if (auto shared = getSharedAttr();
       shared && shared.getInt() != 0 && shared.getInt() != 1 &&
       shared.getInt() != 2)
@@ -62,8 +62,8 @@ LogicalResult StoreOp::verify() {
   auto memRefType = dyn_cast<MemRefType>(getDest().getType());
   if (failed(verifyMemRefAndTensor(*this, memRefType, tensorType)))
     return failure();
-  if (static_cast<int64_t>(getIndex().size()) != tensorType.getRank())
-    return emitOpError("index attribute count must match tensor rank");
+  if (static_cast<int64_t>(getStart().size()) != tensorType.getRank())
+    return emitOpError("start attribute count must match tensor rank");
   if (auto shared = getSharedAttr();
       shared && shared.getInt() != 0 && shared.getInt() != 1 &&
       shared.getInt() != 2)
