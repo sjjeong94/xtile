@@ -1,4 +1,5 @@
 #include "nova/NovaPasses.h"
+#include "nova/NovaOps.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -10,6 +11,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MathExtras.h"
+
+#include <optional>
 
 namespace mlir::nova {
 #define GEN_PASS_DEF_NOVAALLOCATE
@@ -33,6 +36,11 @@ struct ValueLifetime {
   int64_t createdAt;
   int64_t deletedAt;
   int64_t size;
+};
+
+struct ResultProperties {
+  std::optional<int64_t> space;
+  bool eligibleForAllocation;
 };
 
 static bool isSingleElementTensor(RankedTensorType type) {
@@ -76,20 +84,65 @@ static int64_t getBankAlignedEnd(const AllocationInfo &info) {
   return endBank * kBankSize2;
 }
 
-static bool isEligibleForAllocation(Type type) {
+static bool isAllocationEligibleType(Type type) {
   auto tensorType = dyn_cast<RankedTensorType>(type);
   if (!tensorType || !tensorType.hasStaticShape())
     return false;
   return !isSingleElementTensor(tensorType);
 }
 
-static RankedTensorType withAddrEncoding(RankedTensorType type, int64_t addr) {
+static std::optional<int64_t> getSpaceAssignment(OpResult value) {
+  auto type = dyn_cast<RankedTensorType>(value.getType());
+  if (!type || isSingleElementTensor(type))
+    return std::nullopt;
+
+  std::optional<int64_t> specialSpace;
+  for (OpOperand &use : value.getUses()) {
+    auto matmulOp = dyn_cast<nova::MatmulOp>(use.getOwner());
+    if (!matmulOp)
+      continue;
+
+    std::optional<int64_t> candidate;
+    switch (use.getOperandNumber()) {
+    case 2:
+      candidate = 4;
+      break;
+    case 3:
+      candidate = 5;
+      break;
+    default:
+      break;
+    }
+
+    if (!candidate)
+      continue;
+    if (specialSpace && *specialSpace != *candidate)
+      return 3;
+    specialSpace = candidate;
+  }
+
+  return specialSpace.value_or(3);
+}
+
+static ResultProperties getResultProperties(OpResult value) {
+  auto space = getSpaceAssignment(value);
+  return ResultProperties{space, space && *space == 3};
+}
+
+static RankedTensorType withEncoding(RankedTensorType type,
+                                     std::optional<int64_t> bank,
+                                     std::optional<int64_t> space) {
   MLIRContext *context = type.getContext();
   NamedAttrList attrs;
   if (auto dict = dyn_cast_or_null<DictionaryAttr>(type.getEncoding()))
     attrs.append(dict.getValue());
-  int64_t bank = addr / kBankSize;
-  attrs.set("bank", IntegerAttr::get(IntegerType::get(context, 64), bank));
+  if (bank) {
+    attrs.set("bank", IntegerAttr::get(IntegerType::get(context, 64), *bank));
+  }
+  if (space) {
+    attrs.set("space",
+              IntegerAttr::get(IntegerType::get(context, 64), *space));
+  }
   return RankedTensorType::get(type.getShape(), type.getElementType(),
                                DictionaryAttr::get(context, attrs));
 }
@@ -118,10 +171,16 @@ public:
     SmallVector<SmallVector<OpResult>> createdAt(ops.size());
     SmallVector<SmallVector<OpResult>> deletedAt(ops.size() + 1);
     SmallVector<ValueLifetime> lifetimes;
+    DenseMap<Value, ResultProperties> resultProperties;
 
     for (Operation *op : ops) {
       for (OpResult result : op->getResults()) {
-        if (!isEligibleForAllocation(result.getType()))
+        if (!isAllocationEligibleType(result.getType()))
+          continue;
+
+        ResultProperties properties = getResultProperties(result);
+        resultProperties[result] = properties;
+        if (!properties.eligibleForAllocation)
           continue;
 
         auto tensorType = cast<RankedTensorType>(result.getType());
@@ -141,6 +200,17 @@ public:
         createdAt[created].push_back(result);
         deletedAt[deleted].push_back(result);
         lifetimes.push_back(ValueLifetime{result, created, deleted, *size});
+      }
+    }
+
+    for (Operation *op : ops) {
+      for (OpResult result : op->getResults()) {
+        auto it = resultProperties.find(result);
+        if (it == resultProperties.end() || it->second.eligibleForAllocation)
+          continue;
+
+        auto type = cast<RankedTensorType>(result.getType());
+        result.setType(withEncoding(type, std::nullopt, it->second.space));
       }
     }
 
@@ -192,7 +262,8 @@ public:
         }
 
         auto type = cast<RankedTensorType>(value.getType());
-        value.setType(withAddrEncoding(type, *addr));
+        value.setType(withEncoding(type, *addr / kBankSize,
+                                   resultProperties[value].space));
       }
     }
 

@@ -8,6 +8,7 @@
 #include "xt/XTOps.h"
 
 #include <map>
+#include <optional>
 #include <tuple>
 #include <vector>
 
@@ -19,6 +20,20 @@ namespace mlir::xt {
 using namespace mlir;
 
 namespace {
+static IntegerAttr findSharedAttrForValue(Value value) {
+  Operation *definingOp = value.getDefiningOp();
+  while (definingOp) {
+    if (auto loadOp = dyn_cast<xt::LoadOp>(definingOp))
+      return loadOp.getSharedAttr();
+
+    if (definingOp->getNumOperands() != 1)
+      break;
+    value = definingOp->getOperand(0);
+    definingOp = value.getDefiningOp();
+  }
+  return {};
+}
+
 class XTSerializePass
     : public mlir::xt::impl::XTSerializeBase<XTSerializePass> {
 public:
@@ -70,6 +85,25 @@ public:
     int32_t gridX = grid[0];
     int32_t gridY = grid[1];
     int32_t gridZ = grid[2];
+    auto scheduleFree = [&](Value value, IntegerAttr shared, int32_t x, int32_t y,
+                            int32_t z) {
+      if (!doubleBufferingEnabled)
+        return;
+      if (shared && shared.getInt() > 0) {
+        if (shared.getInt() == 1 && y + 1 < gridY) {
+          BlockKey freeBlock{x, y + 1, z};
+          pendingFrees[freeBlock].push_back(value);
+        } else if (shared.getInt() == 2 && z + 1 < gridZ) {
+          BlockKey freeBlock{x, y, z + 1};
+          pendingFrees[freeBlock].push_back(value);
+        }
+        return;
+      }
+      if (x + 1 < gridX) {
+        BlockKey freeBlock{x + 1, y, z};
+        pendingFrees[freeBlock].push_back(value);
+      }
+    };
     for (int32_t z = 0; z < gridZ; ++z) {
       for (int32_t y = 0; y < gridY; ++y) {
         for (int32_t x = 0; x < gridX; ++x) {
@@ -103,26 +137,18 @@ public:
                 Value result = cloned->getResult(0);
                 sharedLoads.emplace(key, result);
                 mapper.map(loadOp.getResult(), result);
-                if (doubleBufferingEnabled) {
-                  if (shared.getInt() == 1 && y + 1 < gridY) {
-                    BlockKey freeBlock{x, y + 1, z};
-                    pendingFrees[freeBlock].push_back(result);
-                  } else if (shared.getInt() == 2 && z + 1 < gridZ) {
-                    BlockKey freeBlock{x, y, z + 1};
-                    pendingFrees[freeBlock].push_back(result);
-                  }
-                }
+                scheduleFree(result, shared, x, y, z);
                 continue;
               }
             }
             Operation *cloned = builder.clone(*op, mapper);
-            if (doubleBufferingEnabled) {
-              if (auto loadOp = dyn_cast<xt::LoadOp>(op)) {
-                if (!loadOp.getSharedAttr() && x + 1 < gridX) {
-                  BlockKey freeBlock{x + 1, y, z};
-                  pendingFrees[freeBlock].push_back(cloned->getResult(0));
-                }
-              }
+            if (auto loadOp = dyn_cast<xt::LoadOp>(op)) {
+              scheduleFree(cloned->getResult(0), loadOp.getSharedAttr(), x, y,
+                           z);
+            } else if (auto storeOp = dyn_cast<xt::StoreOp>(op)) {
+              Value storedValue = mapper.lookupOrDefault(storeOp.getValue());
+              scheduleFree(storedValue, findSharedAttrForValue(storedValue), x,
+                           y, z);
             }
           }
 

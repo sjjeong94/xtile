@@ -44,6 +44,14 @@ func.func @serialize_double_buffer_shared_xy(%src: memref<128x16xf32>, %dst: mem
   func.return
 }
 
+func.func @serialize_double_buffer_store_value(%src: memref<128x16xf32>, %dst: memref<128x16xf32>) attributes {xt.double_buffering = 1 : i32, xt.grid = array<i32: 2, 1, 1>} {
+  %bid:3 = "xt.get_tile_block_id"() : () -> (i32, i32, i32)
+  %0 = "xt.load"(%src, %bid#0, %bid#1) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+  %1 = "xt.exp"(%0) : (tensor<16x16xf32>) -> tensor<16x16xf32>
+  "xt.store"(%1, %dst, %bid#0, %bid#1) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+  func.return
+}
+
 // CHECK-LABEL: func.func @serialize_grid
 // CHECK-NOT: xt.get_tile_block_id
 // CHECK: %[[X00:.*]] = arith.constant 0 : i32
@@ -117,3 +125,12 @@ func.func @serialize_double_buffer_shared_xy(%src: memref<128x16xf32>, %dst: mem
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
+
+// CHECK-LABEL: func.func @serialize_double_buffer_store_value
+// CHECK: %[[SVL0:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+// CHECK: %[[SVE0:.*]] = xt.exp(%[[SVL0]]) : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: xt.store(%[[SVE0]], %arg1, %{{.*}}, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+// CHECK: %[[SVL1:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
+// CHECK: %[[SVE1:.*]] = xt.exp(%[[SVL1]]) : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: xt.store(%[[SVE1]], %arg1, %{{.*}}, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
+// CHECK: xt.free(%[[SVE0]]) : tensor<16x16xf32>
