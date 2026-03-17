@@ -25,6 +25,19 @@ namespace {
 constexpr int64_t kBankSize = 2048 * 64;
 constexpr int64_t kBankSize2 = kBankSize * 2;
 
+enum class MemorySpace : int64_t {
+  DRAM_INPUT = 0,
+  DRAM_OUTPUT = 1,
+  DRAM_WEIGHT = 2,
+  SRAM = 3,
+  RF_MUL = 4,
+  RF_ADD = 5,
+  RF_SMUL = 6,
+  RF_SADD = 7,
+  RF_SE = 8,
+  RF_GE = 9,
+};
+
 struct AllocationInfo {
   OpResult value;
   int64_t size;
@@ -39,7 +52,7 @@ struct ValueLifetime {
 };
 
 struct ResultProperties {
-  std::optional<int64_t> space;
+  std::optional<MemorySpace> space;
   bool eligibleForAllocation;
 };
 
@@ -91,24 +104,24 @@ static bool isAllocationEligibleType(Type type) {
   return !isSingleElementTensor(tensorType);
 }
 
-static std::optional<int64_t> getSpaceAssignment(OpResult value) {
+static std::optional<MemorySpace> getSpaceAssignment(OpResult value) {
   auto type = dyn_cast<RankedTensorType>(value.getType());
   if (!type || isSingleElementTensor(type))
     return std::nullopt;
 
-  std::optional<int64_t> specialSpace;
+  std::optional<MemorySpace> specialSpace;
   for (OpOperand &use : value.getUses()) {
     auto matmulOp = dyn_cast<nova::MatmulOp>(use.getOwner());
     if (!matmulOp)
       continue;
 
-    std::optional<int64_t> candidate;
+    std::optional<MemorySpace> candidate;
     switch (use.getOperandNumber()) {
     case 2:
-      candidate = 4;
+      candidate = MemorySpace::RF_MUL;
       break;
     case 3:
-      candidate = 5;
+      candidate = MemorySpace::RF_ADD;
       break;
     default:
       break;
@@ -117,21 +130,21 @@ static std::optional<int64_t> getSpaceAssignment(OpResult value) {
     if (!candidate)
       continue;
     if (specialSpace && *specialSpace != *candidate)
-      return 3;
+      return MemorySpace::SRAM;
     specialSpace = candidate;
   }
 
-  return specialSpace.value_or(3);
+  return specialSpace.value_or(MemorySpace::SRAM);
 }
 
 static ResultProperties getResultProperties(OpResult value) {
   auto space = getSpaceAssignment(value);
-  return ResultProperties{space, space && *space == 3};
+  return ResultProperties{space, space && *space == MemorySpace::SRAM};
 }
 
 static RankedTensorType withEncoding(RankedTensorType type,
                                      std::optional<int64_t> bank,
-                                     std::optional<int64_t> space) {
+                                     std::optional<MemorySpace> space) {
   MLIRContext *context = type.getContext();
   NamedAttrList attrs;
   if (auto dict = dyn_cast_or_null<DictionaryAttr>(type.getEncoding()))
@@ -141,7 +154,8 @@ static RankedTensorType withEncoding(RankedTensorType type,
   }
   if (space) {
     attrs.set("space",
-              IntegerAttr::get(IntegerType::get(context, 64), *space));
+              IntegerAttr::get(IntegerType::get(context, 64),
+                               static_cast<int64_t>(*space)));
   }
   return RankedTensorType::get(type.getShape(), type.getElementType(),
                                DictionaryAttr::get(context, attrs));

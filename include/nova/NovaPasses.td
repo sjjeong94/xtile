@@ -26,4 +26,16 @@ def NovaAllocate : Pass<"nova-allocate", "::mlir::func::FuncOp"> {
   ];
 }
 
+def NovaThreading : Pass<"nova-threading", "::mlir::func::FuncOp"> {
+  let summary = "Assign and propagate threading in nova tensor encodings";
+  let description = [{
+    Adds a threading entry to nova.load result encodings based on the output
+    tile height and propagates existing threading values through supported
+    unary tensor and unary cast ops.
+  }];
+  let dependentDialects = [
+    "mlir::nova::NovaDialect"
+  ];
+}
+
 #endif // NOVA_PASS
