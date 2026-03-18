@@ -181,7 +181,7 @@ nb::object novaAllocate(nb::object moduleObject) {
 
 } // namespace
 
-NB_MODULE(xtile, m) {
+NB_MODULE(_xtile, m) {
   m.def("parse", &parseModule, nb::arg("asm"),
         "Parse MLIR assembly into an xtile module object compatible with xtile passes.");
   m.def("to_nova", &toNova, nb::arg("module"),

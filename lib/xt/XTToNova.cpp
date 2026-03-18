@@ -180,17 +180,18 @@ struct ReduceOpToNovaPattern : OpRewritePattern<OpTy> {
   static int32_t getMode();
 };
 
-struct RsqrtOpToNovaPattern : OpRewritePattern<xt::RsqrtOp> {
-  using OpRewritePattern<xt::RsqrtOp>::OpRewritePattern;
+template <typename OpTy>
+struct UnaryTensorOpToNovaPattern : OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(xt::RsqrtOp op,
+  LogicalResult matchAndRewrite(OpTy op,
                                 PatternRewriter &rewriter) const override {
     auto inputType = dyn_cast<RankedTensorType>(op.getInput().getType());
     auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
     if (!inputType || !resultType)
       return failure();
 
-    OperationState state(op.getLoc(), "nova.rsqrt");
+    OperationState state(op.getLoc(), getNovaName());
     state.addOperands(op.getInput());
     state.addTypes(resultType);
 
@@ -198,6 +199,8 @@ struct RsqrtOpToNovaPattern : OpRewritePattern<xt::RsqrtOp> {
     rewriter.replaceOp(op, novaOp->getResults());
     return success();
   }
+
+  static StringRef getNovaName();
 };
 
 template <typename OpTy>
@@ -345,6 +348,21 @@ int32_t ReduceOpToNovaPattern<xt::ReduceMaxOp>::getMode() {
 }
 
 template <>
+StringRef UnaryTensorOpToNovaPattern<xt::ExpOp>::getNovaName() {
+  return "nova.exp";
+}
+
+template <>
+StringRef UnaryTensorOpToNovaPattern<xt::ReciprocalOp>::getNovaName() {
+  return "nova.reciprocal";
+}
+
+template <>
+StringRef UnaryTensorOpToNovaPattern<xt::RsqrtOp>::getNovaName() {
+  return "nova.rsqrt";
+}
+
+template <>
 StringRef UnaryCastOpToNovaPattern<xt::IToFOp>::getNovaName() {
   return "nova.itof";
 }
@@ -363,7 +381,9 @@ public:
                  BinaryOpToNovaPattern<xt::SubOp>,
                  LoadOpToNovaPattern,
                  MatmulOpToNovaPattern,
-                 RsqrtOpToNovaPattern,
+                 UnaryTensorOpToNovaPattern<xt::ExpOp>,
+                 UnaryTensorOpToNovaPattern<xt::ReciprocalOp>,
+                 UnaryTensorOpToNovaPattern<xt::RsqrtOp>,
                  UnaryCastOpToNovaPattern<xt::IToFOp>,
                  UnaryCastOpToNovaPattern<xt::FToIOp>,
                  ReduceOpToNovaPattern<xt::ReduceSumOp>,

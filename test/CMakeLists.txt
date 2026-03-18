@@ -49,6 +49,10 @@ if(TARGET xt)
     NAME xt-python-allocate
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/allocate.py
   )
+  add_test(
+    NAME xt-python-dsl-convert
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/dsl_convert.py
+  )
   set_tests_properties(xt-python-to-nova PROPERTIES
     ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -64,5 +68,9 @@ if(TARGET xt)
   set_tests_properties(xt-python-allocate PROPERTIES
     ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+  set_tests_properties(xt-python-dsl-convert PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
+    WORKING_DIRECTORY "${XT_SOURCE_DIR}"
   )
 endif()

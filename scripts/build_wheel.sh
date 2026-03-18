@@ -130,14 +130,20 @@ cmake -S "$REPO_ROOT" -B "$BUILD_DIR" \
   -DPython3_EXECUTABLE="$PYTHON_EXE"
 cmake --build "$BUILD_DIR" --target xt
 
-EXTENSION_PATH="$("$PYTHON_BIN" - <<PY
+PACKAGE_DIR="$("$PYTHON_BIN" - <<PY
 from pathlib import Path
 
-build_python_dir = Path(r"$BUILD_DIR") / "python"
-candidates = sorted(build_python_dir.glob("xtile*.so")) + sorted(build_python_dir.glob("xtile*.pyd"))
-if not candidates:
-    raise SystemExit("missing built xtile extension in " + str(build_python_dir))
-print(candidates[0])
+package_dir = Path(r"$BUILD_DIR") / "python" / "xtile"
+if not package_dir.is_dir():
+    raise SystemExit("missing built xtile package in " + str(package_dir))
+extension_candidates = sorted(package_dir.glob("_xtile*.so")) + sorted(package_dir.glob("_xtile*.pyd"))
+if not extension_candidates:
+    raise SystemExit("missing built _xtile extension in " + str(package_dir))
+required_files = [package_dir / "__init__.py", package_dir / "dsl.py"]
+for required_file in required_files:
+    if not required_file.is_file():
+        raise SystemExit("missing built package file " + str(required_file))
+print(package_dir)
 PY
 )"
 
@@ -157,7 +163,7 @@ import zipfile
 
 repo_root = Path(r"$REPO_ROOT")
 dist_dir = Path(r"$DIST_DIR")
-extension_path = Path(r"$EXTENSION_PATH")
+package_dir = Path(r"$PACKAGE_DIR")
 version = "$WHEEL_VERSION"
 name = "xtile"
 
@@ -173,7 +179,7 @@ platform_tag = sysconfig.get_platform().replace("-", "_").replace(".", "_")
 wheel_basename = f"{name}-{version}-{py_tag}-{abi_tag}-{platform_tag}"
 stage_dir = Path(r"$TMPDIR") / wheel_basename
 stage_dir.mkdir(parents=True, exist_ok=True)
-shutil.copy2(extension_path, stage_dir / extension_path.name)
+shutil.copytree(package_dir, stage_dir / name)
 
 dist_info = stage_dir / f"{name}-{version}.dist-info"
 dist_info.mkdir()

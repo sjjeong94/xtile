@@ -100,6 +100,12 @@ def Nova_ScalarFmaOp : Nova_Op<"scalar_fma", [Pure]> {
 def Nova_SquareOp : Nova_UnaryTensorOp<
     "square", "hardware tile unary square op">;
 
+def Nova_ExpOp : Nova_UnaryTensorOp<
+    "exp", "hardware tile unary exp op">;
+
+def Nova_ReciprocalOp : Nova_UnaryTensorOp<
+    "reciprocal", "hardware tile unary reciprocal op">;
+
 def Nova_RsqrtOp : Nova_UnaryTensorOp<
     "rsqrt", "hardware tile unary rsqrt op">;
 
