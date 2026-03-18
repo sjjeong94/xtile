@@ -54,6 +54,8 @@ cmake "${CMAKE_GENERATOR_ARGS[@]}" \
   -DLLVM_TARGETS_TO_BUILD="host" \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_ASSERTIONS=ON \
+  -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
+  -DPython3_EXECUTABLE="${Python3_EXECUTABLE:-$(command -v python3)}" \
   -DCMAKE_INSTALL_PREFIX="$LLVM_INSTALL_DIR"
 
 cmake --build "$LLVM_BUILD_DIR" --target install

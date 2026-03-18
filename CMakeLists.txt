@@ -22,9 +22,23 @@ include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
+include(MLIRDetectPythonEnv)
 
 set(XT_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 set(XT_BINARY_DIR ${PROJECT_BINARY_DIR})
+get_filename_component(XT_LLVM_CMAKE_DIR_PARENT "${LLVM_DIR}" DIRECTORY)
+get_filename_component(XT_LLVM_CMAKE_ROOT "${XT_LLVM_CMAKE_DIR_PARENT}/../.." ABSOLUTE)
+
+option(XT_ENABLE_PYTHON_BINDINGS "Build xt nanobind Python bindings" ON)
+
+if(XT_ENABLE_PYTHON_BINDINGS)
+  find_package(Python3 ${LLVM_MINIMUM_PYTHON_VERSION}
+    COMPONENTS Interpreter Development.Module REQUIRED)
+  find_package(Python ${LLVM_MINIMUM_PYTHON_VERSION}
+    COMPONENTS Interpreter Development.Module REQUIRED)
+  mlir_detect_nanobind_install()
+  find_package(nanobind 2.4 CONFIG REQUIRED)
+endif()
 
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
@@ -36,4 +50,7 @@ add_definitions(${LLVM_DEFINITIONS})
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(xt-opt)
+if(XT_ENABLE_PYTHON_BINDINGS)
+  add_subdirectory(python)
+endif()
 add_subdirectory(test)
