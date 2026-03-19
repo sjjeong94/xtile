@@ -81,14 +81,14 @@ class TensorValue:
 class LoadOp:
     result: TensorValue
     array: KernelArg
-    index: tuple[BlockId | ConstantIndex, BlockId | ConstantIndex]
+    index: tuple[BlockId | ConstantIndex, ...]
     shared: int | None
 
 
 @dataclass(frozen=True)
 class StoreOp:
     array: KernelArg
-    index: tuple[BlockId | ConstantIndex, BlockId | ConstantIndex]
+    index: tuple[BlockId | ConstantIndex, ...]
     tile: TensorValue
 
 
@@ -121,6 +121,23 @@ class CastOp:
     input_value: TensorValue
 
 
+@dataclass(frozen=True)
+class TernaryOp:
+    op_name: str
+    result: TensorValue
+    lhs: TensorValue
+    rhs: TensorValue
+    third: TensorValue
+
+
+@dataclass(frozen=True)
+class AttrOp:
+    op_name: str
+    result: TensorValue
+    operands: tuple[TensorValue, ...]
+    attrs: tuple[tuple[str, tuple[int, ...]], ...]
+
+
 class TraceContext:
     def __init__(
         self,
@@ -151,7 +168,9 @@ class TraceContext:
             raise TypeError("convert args must be xt.Array values or integers")
         self.kernel_args = tuple(kernel_args)
         self.array_args = tuple(arg for arg in self.kernel_args if isinstance(arg, KernelArg))
-        self.operations: list[LoadOp | StoreOp | ReduceOp | UnaryOp | BinaryOp | CastOp] = []
+        self.operations: list[
+            LoadOp | StoreOp | ReduceOp | UnaryOp | BinaryOp | CastOp | TernaryOp | AttrOp
+        ] = []
         self.used_block_ids = False
         self.load_counts = [0] * len(self.kernel_args)
         self.store_counts = [0] * len(self.kernel_args)
@@ -173,16 +192,18 @@ class TraceContext:
     def load(
         self,
         array: KernelArg,
-        index: tuple[BlockId | int, BlockId | int],
-        shape: tuple[int, int],
+        index: tuple[BlockId | int, ...],
+        shape: tuple[int, ...],
         shared: int | None = None,
     ) -> TensorValue:
         self._validate_kernel_arg(array)
         normalized_index = self._normalize_index(index)
         self._validate_shape(shape)
         self._validate_shared(shared)
-        if len(array.array.shape) != 2:
-            raise ValueError("xt.load currently supports rank-2 arrays only")
+        if len(array.array.shape) != len(shape):
+            raise ValueError("xt.load requires shape rank to match the source array rank")
+        if len(normalized_index) != len(shape):
+            raise ValueError("xt.load requires index rank to match the source array rank")
         result = TensorValue(
             ssa_name=self._next_name("x"),
             shape=shape,
@@ -209,8 +230,26 @@ class TraceContext:
     def exp(self, input_value: TensorValue) -> TensorValue:
         return self._unary("xt.exp", input_value, "exp")
 
+    def cos(self, input_value: TensorValue) -> TensorValue:
+        return self._unary("xt.cos", input_value, "cos")
+
+    def sin(self, input_value: TensorValue) -> TensorValue:
+        return self._unary("xt.sin", input_value, "sin")
+
     def reciprocal(self, input_value: TensorValue) -> TensorValue:
         return self._unary("xt.reciprocal", input_value, "inv_sum")
+
+    def rsqrt(self, input_value: TensorValue) -> TensorValue:
+        return self._unary("xt.rsqrt", input_value, "rsqrt")
+
+    def sigmoid(self, input_value: TensorValue) -> TensorValue:
+        return self._unary("xt.sigmoid", input_value, "sigmoid")
+
+    def tanh(self, input_value: TensorValue) -> TensorValue:
+        return self._unary("xt.tanh", input_value, "tanh")
+
+    def silu(self, input_value: TensorValue) -> TensorValue:
+        return self._unary("xt.silu", input_value, "silu")
 
     def mul(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         return self._binary("xt.mul", lhs, rhs, "normalized")
@@ -260,16 +299,111 @@ class TraceContext:
         self.operations.append(CastOp(op_name=op_name, result=result, input_value=input_value))
         return result
 
+    def reshape(self, input_value: TensorValue, shape: tuple[int, ...]) -> TensorValue:
+        self._validate_tensor_value(input_value)
+        self._validate_shape(shape)
+        if self._element_count(input_value.shape) != self._element_count(shape):
+            raise ValueError("xt.reshape requires the same number of elements")
+
+        result = TensorValue(
+            ssa_name=self._next_name("reshape"),
+            shape=shape,
+            dtype=input_value.dtype,
+        )
+        self.operations.append(UnaryOp(op_name="xt.reshape", result=result, input_value=input_value))
+        return result
+
+    def transpose(self, input_value: TensorValue) -> TensorValue:
+        self._validate_tensor_value(input_value)
+        if len(input_value.shape) != 3:
+            raise ValueError("xt.transpose currently supports rank-3 tensors only")
+        result = TensorValue(
+            ssa_name=self._next_name("transpose"),
+            shape=(input_value.shape[0], input_value.shape[2], input_value.shape[1]),
+            dtype=input_value.dtype,
+        )
+        self.operations.append(
+            UnaryOp(op_name="xt.transpose", result=result, input_value=input_value)
+        )
+        return result
+
+    def mma(self, lhs: TensorValue, rhs: TensorValue, acc: TensorValue) -> TensorValue:
+        self._validate_tensor_value(lhs)
+        self._validate_tensor_value(rhs)
+        self._validate_tensor_value(acc)
+        if len(lhs.shape) != 2 or len(rhs.shape) != 2 or len(acc.shape) != 2:
+            raise ValueError("xt.mma currently supports rank-2 tensors only")
+        if lhs.dtype != int8 or rhs.dtype != int8:
+            raise TypeError("xt.mma requires int8 lhs and rhs tensors")
+        if acc.dtype != float32:
+            raise TypeError("xt.mma currently requires a float32 accumulator")
+        if lhs.shape[1] != rhs.shape[0]:
+            raise ValueError("xt.mma requires lhs inner dimension to match rhs outer dimension")
+        if acc.shape != (lhs.shape[0], rhs.shape[1]):
+            raise ValueError("xt.mma accumulator shape must match the matmul result shape")
+
+        result = TensorValue(
+            ssa_name=self._next_name("mma"),
+            shape=acc.shape,
+            dtype=acc.dtype,
+        )
+        self.operations.append(
+            TernaryOp(op_name="xt.mma", result=result, lhs=lhs, rhs=rhs, third=acc)
+        )
+        return result
+
+    def conv2d(
+        self,
+        input_value: TensorValue,
+        filter_value: TensorValue,
+        *,
+        pad: tuple[int, int, int, int],
+        stride: tuple[int, int],
+        dilation: tuple[int, int],
+    ) -> TensorValue:
+        return self._conv_like(
+            "xt.conv2d",
+            input_value,
+            filter_value,
+            pad=pad,
+            stride=stride,
+            dilation=dilation,
+            depthwise=False,
+        )
+
+    def depthwise_conv2d(
+        self,
+        input_value: TensorValue,
+        filter_value: TensorValue,
+        *,
+        pad: tuple[int, int, int, int],
+        stride: tuple[int, int],
+        dilation: tuple[int, int],
+    ) -> TensorValue:
+        return self._conv_like(
+            "xt.depthwise_conv2d",
+            input_value,
+            filter_value,
+            pad=pad,
+            stride=stride,
+            dilation=dilation,
+            depthwise=True,
+        )
+
     def store(
         self,
         array: KernelArg,
-        index: tuple[BlockId | int, BlockId | int],
+        index: tuple[BlockId | int, ...],
         tile: TensorValue,
     ) -> None:
         self._validate_kernel_arg(array)
         normalized_index = self._normalize_index(index)
         if not isinstance(tile, TensorValue):
             raise TypeError("xt.store expects a tensor value")
+        if len(array.array.shape) != len(tile.shape):
+            raise ValueError("xt.store requires tile rank to match the destination array rank")
+        if len(normalized_index) != len(tile.shape):
+            raise ValueError("xt.store requires index rank to match the destination array rank")
         self.operations.append(StoreOp(array=array, index=normalized_index, tile=tile))
         self.store_counts[array.index] += 1
 
@@ -304,7 +438,7 @@ class TraceContext:
                     "  "
                     f"{op.result.ssa_name} = xt.load(%{arg_names[op.array.index]}, "
                     f"{self._format_index(op.index)}){attr} : "
-                    f"({self._format_memref_type(op.array.array)}, i32, i32) -> "
+                    f"({self._format_operand_type_list((self._format_memref_type(op.array.array),), len(op.index))}) -> "
                     f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
                 )
                 continue
@@ -313,8 +447,7 @@ class TraceContext:
                 lines.append(
                     "  "
                     f"xt.store({op.tile.ssa_name}, %{arg_names[op.array.index]}, {self._format_index(op.index)}) : "
-                    f"({self._format_tensor_type(op.tile.shape, op.tile.dtype)}, "
-                    f"{self._format_memref_type(op.array.array)}, i32, i32) -> ()"
+                    f"({self._format_operand_type_list((self._format_tensor_type(op.tile.shape, op.tile.dtype), self._format_memref_type(op.array.array)), len(op.index))}) -> ()"
                 )
                 continue
 
@@ -341,6 +474,35 @@ class TraceContext:
                     "  "
                     f"{op.result.ssa_name} = {op.op_name}({op.input_value.ssa_name}) : "
                     f"{self._format_tensor_type(op.input_value.shape, op.input_value.dtype)} -> "
+                    f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
+                )
+                continue
+
+            if isinstance(op, TernaryOp):
+                lines.append(
+                    "  "
+                    f"{op.result.ssa_name} = {op.op_name}({op.lhs.ssa_name}, {op.rhs.ssa_name}, {op.third.ssa_name}) : "
+                    f"{self._format_tensor_type(op.lhs.shape, op.lhs.dtype)}, "
+                    f"{self._format_tensor_type(op.rhs.shape, op.rhs.dtype)}, "
+                    f"{self._format_tensor_type(op.third.shape, op.third.dtype)} -> "
+                    f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
+                )
+                continue
+
+            if isinstance(op, AttrOp):
+                attr_text = ", ".join(
+                    f"{name} = array<i64: {', '.join(str(v) for v in values)}>"
+                    for name, values in op.attrs
+                )
+                operand_types = ", ".join(
+                    self._format_tensor_type(operand.shape, operand.dtype)
+                    for operand in op.operands
+                )
+                lines.append(
+                    "  "
+                    f"{op.result.ssa_name} = {op.op_name}("
+                    + ", ".join(operand.ssa_name for operand in op.operands)
+                    + f") {{{attr_text}}} : {operand_types} -> "
                     f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
                 )
                 continue
@@ -398,10 +560,10 @@ class TraceContext:
 
     def _normalize_index(
         self,
-        index: tuple[BlockId | int, BlockId | int],
-    ) -> tuple[BlockId | ConstantIndex, BlockId | ConstantIndex]:
-        if not isinstance(index, tuple) or len(index) != 2:
-            raise TypeError("index must be a tuple of two values")
+        index: tuple[BlockId | int, ...],
+    ) -> tuple[BlockId | ConstantIndex, ...]:
+        if not isinstance(index, tuple) or not index:
+            raise TypeError("index must be a non-empty tuple of values")
 
         normalized: list[BlockId | ConstantIndex] = []
         for value in index:
@@ -412,7 +574,7 @@ class TraceContext:
                 normalized.append(self._constant_index(value))
                 continue
             raise TypeError("index values must be xt.bid(...) results or integers")
-        return (normalized[0], normalized[1])
+        return tuple(normalized)
 
     def _constant_index(self, value: int) -> ConstantIndex:
         if value not in self.constant_names:
@@ -454,13 +616,11 @@ class TraceContext:
             raise TypeError("xtile operation expects a tensor value")
 
     @staticmethod
-    def _validate_shape(shape: tuple[int, int]) -> None:
-        if (
-            not isinstance(shape, tuple)
-            or len(shape) != 2
-            or any(not isinstance(dim, int) or dim <= 0 for dim in shape)
+    def _validate_shape(shape: tuple[int, ...]) -> None:
+        if not isinstance(shape, tuple) or not shape or any(
+            not isinstance(dim, int) or dim <= 0 for dim in shape
         ):
-            raise TypeError("shape must be a tuple of two positive integers")
+            raise TypeError("shape must be a tuple of positive integers")
 
     @staticmethod
     def _is_broadcast_compatible(lhs: tuple[int, ...], rhs: tuple[int, ...]) -> bool:
@@ -484,6 +644,93 @@ class TraceContext:
             else:
                 parts.append("%zero" if value.value == 0 else f"%c{value.value}")
         return ", ".join(parts)
+
+    @staticmethod
+    def _format_operand_type_list(prefix_types: tuple[str, ...], coord_count: int) -> str:
+        return ", ".join((*prefix_types, *(["i32"] * coord_count)))
+
+    @staticmethod
+    def _element_count(shape: tuple[int, ...]) -> int:
+        count = 1
+        for dim in shape:
+            count *= dim
+        return count
+
+    @staticmethod
+    def _validate_attr_tuple(
+        name: str, value: tuple[int, ...], expected_len: int, *, positive: bool = False
+    ) -> None:
+        if not isinstance(value, tuple) or len(value) != expected_len:
+            raise TypeError(f"{name} must be a tuple of {expected_len} integers")
+        for item in value:
+            if not isinstance(item, int):
+                raise TypeError(f"{name} must be a tuple of {expected_len} integers")
+            if positive and item <= 0:
+                raise ValueError(f"{name} values must be positive")
+            if not positive and item < 0:
+                raise ValueError(f"{name} values must be non-negative")
+
+    def _conv_like(
+        self,
+        op_name: str,
+        input_value: TensorValue,
+        filter_value: TensorValue,
+        *,
+        pad: tuple[int, int, int, int],
+        stride: tuple[int, int],
+        dilation: tuple[int, int],
+        depthwise: bool,
+    ) -> TensorValue:
+        self._validate_tensor_value(input_value)
+        self._validate_tensor_value(filter_value)
+        self._validate_attr_tuple("pad", pad, 4)
+        self._validate_attr_tuple("stride", stride, 2, positive=True)
+        self._validate_attr_tuple("dilation", dilation, 2, positive=True)
+        if len(input_value.shape) != 4 or len(filter_value.shape) != 4:
+            raise ValueError(f"{op_name} currently supports rank-4 tensors only")
+        if input_value.dtype != int8 or filter_value.dtype != int8:
+            raise TypeError(f"{op_name} currently requires int8 inputs")
+        if depthwise:
+            if filter_value.shape[2] != 1:
+                raise ValueError("xt.depthwise_conv2d requires filter dim 2 to be 1")
+            if filter_value.shape[3] != input_value.shape[3]:
+                raise ValueError("xt.depthwise_conv2d requires matching channel counts")
+            out_channels = input_value.shape[3]
+        else:
+            if input_value.shape[3] != filter_value.shape[2]:
+                raise ValueError("xt.conv2d requires input/filter channels to match")
+            out_channels = filter_value.shape[3]
+
+        out_h = self._compute_conv_output_dim(
+            input_value.shape[1], filter_value.shape[0], pad[0], pad[2], stride[0], dilation[0]
+        )
+        out_w = self._compute_conv_output_dim(
+            input_value.shape[2], filter_value.shape[1], pad[1], pad[3], stride[1], dilation[1]
+        )
+        result = TensorValue(
+            ssa_name=self._next_name("conv" if not depthwise else "dwconv"),
+            shape=(input_value.shape[0], out_h, out_w, out_channels),
+            dtype=float32,
+        )
+        self.operations.append(
+            AttrOp(
+                op_name=op_name,
+                result=result,
+                operands=(input_value, filter_value),
+                attrs=(("pad", pad), ("stride", stride), ("dilation", dilation)),
+            )
+        )
+        return result
+
+    @staticmethod
+    def _compute_conv_output_dim(
+        input_size: int, kernel_size: int, pad_before: int, pad_after: int, stride: int, dilation: int
+    ) -> int:
+        effective_kernel = dilation * (kernel_size - 1) + 1
+        numerator = input_size + pad_before + pad_after - effective_kernel
+        if numerator < 0:
+            raise ValueError("invalid convolution configuration")
+        return numerator // stride + 1
 
     @staticmethod
     def _format_memref_type(array: Array) -> str:
@@ -512,8 +759,8 @@ def bid(dim: int) -> BlockId:
 def load(
     array: KernelArg,
     *,
-    index: tuple[BlockId | int, BlockId | int],
-    shape: tuple[int, int],
+    index: tuple[BlockId | int, ...],
+    shape: tuple[int, ...],
     shared: int | None = None,
 ) -> TensorValue:
     if _ACTIVE_TRACE is None:
@@ -545,10 +792,46 @@ def exp(input_value: TensorValue) -> TensorValue:
     return _ACTIVE_TRACE.exp(input_value)
 
 
+def cos(input_value: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.cos may only be used while converting a kernel")
+    return _ACTIVE_TRACE.cos(input_value)
+
+
+def sin(input_value: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.sin may only be used while converting a kernel")
+    return _ACTIVE_TRACE.sin(input_value)
+
+
 def reciprocal(input_value: TensorValue) -> TensorValue:
     if _ACTIVE_TRACE is None:
         raise RuntimeError("xt.reciprocal may only be used while converting a kernel")
     return _ACTIVE_TRACE.reciprocal(input_value)
+
+
+def rsqrt(input_value: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.rsqrt may only be used while converting a kernel")
+    return _ACTIVE_TRACE.rsqrt(input_value)
+
+
+def sigmoid(input_value: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.sigmoid may only be used while converting a kernel")
+    return _ACTIVE_TRACE.sigmoid(input_value)
+
+
+def tanh(input_value: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.tanh may only be used while converting a kernel")
+    return _ACTIVE_TRACE.tanh(input_value)
+
+
+def silu(input_value: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.silu may only be used while converting a kernel")
+    return _ACTIVE_TRACE.silu(input_value)
 
 
 def mul(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
@@ -575,10 +858,58 @@ def astype(input_value: TensorValue, *, dtype: DType) -> TensorValue:
     return _ACTIVE_TRACE.astype(input_value, dtype)
 
 
+def reshape(input_value: TensorValue, *, shape: tuple[int, ...]) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.reshape may only be used while converting a kernel")
+    return _ACTIVE_TRACE.reshape(input_value, shape)
+
+
+def transpose(input_value: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.transpose may only be used while converting a kernel")
+    return _ACTIVE_TRACE.transpose(input_value)
+
+
+def mma(lhs: TensorValue, rhs: TensorValue, acc: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.mma may only be used while converting a kernel")
+    return _ACTIVE_TRACE.mma(lhs, rhs, acc)
+
+
+def conv2d(
+    input_value: TensorValue,
+    filter_value: TensorValue,
+    *,
+    pad: tuple[int, int, int, int],
+    stride: tuple[int, int],
+    dilation: tuple[int, int],
+) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.conv2d may only be used while converting a kernel")
+    return _ACTIVE_TRACE.conv2d(
+        input_value, filter_value, pad=pad, stride=stride, dilation=dilation
+    )
+
+
+def depthwise_conv2d(
+    input_value: TensorValue,
+    filter_value: TensorValue,
+    *,
+    pad: tuple[int, int, int, int],
+    stride: tuple[int, int],
+    dilation: tuple[int, int],
+) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.depthwise_conv2d may only be used while converting a kernel")
+    return _ACTIVE_TRACE.depthwise_conv2d(
+        input_value, filter_value, pad=pad, stride=stride, dilation=dilation
+    )
+
+
 def store(
     array: KernelArg,
     *,
-    index: tuple[BlockId | int, BlockId | int],
+    index: tuple[BlockId | int, ...],
     tile: TensorValue,
 ) -> None:
     if _ACTIVE_TRACE is None:
@@ -589,7 +920,7 @@ def store(
 def convert(
     kernel_fn: KernelFunction,
     *,
-    args: tuple[Array, ...],
+    args: tuple[Array | int, ...],
     grid: tuple[int, int, int],
     double_buffering: bool,
     parse_module: Callable[[str], object],
