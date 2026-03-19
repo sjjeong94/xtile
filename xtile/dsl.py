@@ -12,6 +12,7 @@ class DType:
 
 
 float32 = DType(name="float32", mlir_name="f32")
+int8 = DType(name="int8", mlir_name="i8")
 
 
 @dataclass(frozen=True)
@@ -65,12 +66,16 @@ class TensorValue:
     def __mul__(self, other: object) -> TensorValue:
         return mul(self, other)
 
+    def __add__(self, other: object) -> TensorValue:
+        return add(self, other)
+
 
 @dataclass(frozen=True)
 class LoadOp:
     result: TensorValue
     array: KernelArg
     index: tuple[BlockId | ConstantIndex, BlockId | ConstantIndex]
+    shared: int | None
 
 
 @dataclass(frozen=True)
@@ -102,6 +107,13 @@ class BinaryOp:
     rhs: TensorValue
 
 
+@dataclass(frozen=True)
+class CastOp:
+    op_name: str
+    result: TensorValue
+    input_value: TensorValue
+
+
 class TraceContext:
     def __init__(
         self,
@@ -125,7 +137,7 @@ class TraceContext:
             KernelArg(index=i, python_name=param.name, array=array)
             for i, (param, array) in enumerate(zip(params, args))
         )
-        self.operations: list[LoadOp | StoreOp | ReduceOp | UnaryOp | BinaryOp] = []
+        self.operations: list[LoadOp | StoreOp | ReduceOp | UnaryOp | BinaryOp | CastOp] = []
         self.used_block_ids = False
         self.load_counts = [0] * len(self.kernel_args)
         self.store_counts = [0] * len(self.kernel_args)
@@ -146,10 +158,12 @@ class TraceContext:
         array: KernelArg,
         index: tuple[BlockId | int, BlockId | int],
         shape: tuple[int, int],
+        shared: int | None = None,
     ) -> TensorValue:
         self._validate_kernel_arg(array)
         normalized_index = self._normalize_index(index)
         self._validate_shape(shape)
+        self._validate_shared(shared)
         if len(array.array.shape) != 2:
             raise ValueError("xt.load currently supports rank-2 arrays only")
         result = TensorValue(
@@ -157,7 +171,9 @@ class TraceContext:
             shape=shape,
             dtype=array.array.dtype,
         )
-        self.operations.append(LoadOp(result=result, array=array, index=normalized_index))
+        self.operations.append(
+            LoadOp(result=result, array=array, index=normalized_index, shared=shared)
+        )
         self.load_counts[array.index] += 1
         return result
 
@@ -170,6 +186,9 @@ class TraceContext:
     def sub(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         return self._binary("xt.sub", lhs, rhs, "shifted")
 
+    def add(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
+        return self._binary("xt.add", lhs, rhs, "sum")
+
     def exp(self, input_value: TensorValue) -> TensorValue:
         return self._unary("xt.exp", input_value, "exp")
 
@@ -178,6 +197,51 @@ class TraceContext:
 
     def mul(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         return self._binary("xt.mul", lhs, rhs, "normalized")
+
+    def matmul(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
+        self._validate_tensor_value(lhs)
+        self._validate_tensor_value(rhs)
+        if len(lhs.shape) != 2 or len(rhs.shape) != 2:
+            raise ValueError("xt.matmul currently supports rank-2 tensors only")
+        if lhs.shape[1] != rhs.shape[0]:
+            raise ValueError("xt.matmul requires lhs inner dimension to match rhs outer dimension")
+
+        if lhs.dtype == int8 and rhs.dtype == int8:
+            result_dtype = float32
+        elif lhs.dtype == rhs.dtype:
+            result_dtype = lhs.dtype
+        else:
+            raise TypeError("xt.matmul requires matching dtypes or int8 inputs")
+
+        result = TensorValue(
+            ssa_name=self._next_name("matmul"),
+            shape=(lhs.shape[0], rhs.shape[1]),
+            dtype=result_dtype,
+        )
+        self.operations.append(BinaryOp(op_name="xt.matmul", result=result, lhs=lhs, rhs=rhs))
+        return result
+
+    def astype(self, input_value: TensorValue, dtype: DType) -> TensorValue:
+        self._validate_tensor_value(input_value)
+        if not isinstance(dtype, DType):
+            raise TypeError("xt.astype requires an xtile dtype")
+        if input_value.dtype == dtype:
+            return input_value
+
+        if input_value.dtype == int8 and dtype == float32:
+            op_name = "xt.itof"
+        elif input_value.dtype == float32 and dtype == int8:
+            op_name = "xt.ftoi"
+        else:
+            raise TypeError("xt.astype only supports int8<->float32 conversions")
+
+        result = TensorValue(
+            ssa_name=self._next_name("cast"),
+            shape=input_value.shape,
+            dtype=dtype,
+        )
+        self.operations.append(CastOp(op_name=op_name, result=result, input_value=input_value))
+        return result
 
     def store(
         self,
@@ -216,10 +280,13 @@ class TraceContext:
 
         for op in self.operations:
             if isinstance(op, LoadOp):
+                attr = " {shared = 1 : i64}" if op.shared == 1 else ""
+                if op.shared == 2:
+                    attr = " {shared = 2 : i64}"
                 lines.append(
                     "  "
                     f"{op.result.ssa_name} = xt.load(%{arg_names[op.array.index]}, "
-                    f"{self._format_index(op.index)}) : "
+                    f"{self._format_index(op.index)}){attr} : "
                     f"({self._format_memref_type(op.array.array)}, i32, i32) -> "
                     f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
                 )
@@ -244,6 +311,15 @@ class TraceContext:
                 continue
 
             if isinstance(op, UnaryOp):
+                lines.append(
+                    "  "
+                    f"{op.result.ssa_name} = {op.op_name}({op.input_value.ssa_name}) : "
+                    f"{self._format_tensor_type(op.input_value.shape, op.input_value.dtype)} -> "
+                    f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
+                )
+                continue
+
+            if isinstance(op, CastOp):
                 lines.append(
                     "  "
                     f"{op.result.ssa_name} = {op.op_name}({op.input_value.ssa_name}) : "
@@ -369,7 +445,16 @@ class TraceContext:
 
     @staticmethod
     def _is_broadcast_compatible(lhs: tuple[int, ...], rhs: tuple[int, ...]) -> bool:
-        return lhs == rhs or (len(lhs) == 2 and len(rhs) == 2 and lhs[0] == rhs[0] and rhs[1] == 1)
+        if lhs == rhs:
+            return True
+        if len(lhs) != len(rhs):
+            return False
+        return all(l_dim == r_dim or r_dim == 1 for l_dim, r_dim in zip(lhs, rhs))
+
+    @staticmethod
+    def _validate_shared(shared: int | None) -> None:
+        if shared is not None and shared not in (0, 1, 2):
+            raise ValueError("shared must be 0, 1, 2, or None")
 
     @staticmethod
     def _format_index(index: tuple[BlockId | ConstantIndex, BlockId | ConstantIndex]) -> str:
@@ -410,10 +495,11 @@ def load(
     *,
     index: tuple[BlockId | int, BlockId | int],
     shape: tuple[int, int],
+    shared: int | None = None,
 ) -> TensorValue:
     if _ACTIVE_TRACE is None:
         raise RuntimeError("xt.load may only be used while converting a kernel")
-    return _ACTIVE_TRACE.load(array, index, shape)
+    return _ACTIVE_TRACE.load(array, index, shape, shared)
 
 
 def max(input_value: TensorValue) -> TensorValue:
@@ -450,6 +536,24 @@ def mul(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
     if _ACTIVE_TRACE is None:
         raise RuntimeError("xt.mul may only be used while converting a kernel")
     return _ACTIVE_TRACE.mul(lhs, rhs)
+
+
+def add(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.add may only be used while converting a kernel")
+    return _ACTIVE_TRACE.add(lhs, rhs)
+
+
+def matmul(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.matmul may only be used while converting a kernel")
+    return _ACTIVE_TRACE.matmul(lhs, rhs)
+
+
+def astype(input_value: TensorValue, *, dtype: DType) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.astype may only be used while converting a kernel")
+    return _ACTIVE_TRACE.astype(input_value, dtype)
 
 
 def store(
