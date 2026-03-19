@@ -45,6 +45,13 @@ class KernelArg:
 
 
 @dataclass(frozen=True)
+class ScalarArg:
+    index: int
+    python_name: str
+    value: int
+
+
+@dataclass(frozen=True)
 class BlockId:
     dim: int
 
@@ -118,7 +125,7 @@ class TraceContext:
     def __init__(
         self,
         kernel: KernelFunction,
-        args: tuple[Array, ...],
+        args: tuple[Array | int, ...],
         grid: tuple[int, int, int],
         double_buffering: bool,
     ) -> None:
@@ -133,10 +140,17 @@ class TraceContext:
         self.kernel_name = kernel.fn.__name__
         self.grid = grid
         self.double_buffering = double_buffering
-        self.kernel_args = tuple(
-            KernelArg(index=i, python_name=param.name, array=array)
-            for i, (param, array) in enumerate(zip(params, args))
-        )
+        kernel_args: list[KernelArg | ScalarArg] = []
+        for i, (param, arg) in enumerate(zip(params, args)):
+            if isinstance(arg, Array):
+                kernel_args.append(KernelArg(index=i, python_name=param.name, array=arg))
+                continue
+            if isinstance(arg, int):
+                kernel_args.append(ScalarArg(index=i, python_name=param.name, value=arg))
+                continue
+            raise TypeError("convert args must be xt.Array values or integers")
+        self.kernel_args = tuple(kernel_args)
+        self.array_args = tuple(arg for arg in self.kernel_args if isinstance(arg, KernelArg))
         self.operations: list[LoadOp | StoreOp | ReduceOp | UnaryOp | BinaryOp | CastOp] = []
         self.used_block_ids = False
         self.load_counts = [0] * len(self.kernel_args)
@@ -144,8 +158,11 @@ class TraceContext:
         self.name_counts: dict[str, int] = {}
         self.constant_names: dict[int, str] = {}
 
-    def trace_arguments(self) -> tuple[KernelArg, ...]:
-        return self.kernel_args
+    def trace_arguments(self) -> tuple[KernelArg | int, ...]:
+        return tuple(
+            arg if isinstance(arg, KernelArg) else arg.value
+            for arg in self.kernel_args
+        )
 
     def bid(self, dim: int) -> BlockId:
         if dim not in (0, 1, 2):
@@ -260,7 +277,7 @@ class TraceContext:
         arg_names = self._assign_mlir_arg_names()
         arg_defs = ", ".join(
             f"%{arg_names[arg.index]}: {self._format_memref_type(arg.array)}"
-            for arg in self.kernel_args
+            for arg in self.array_args
         )
 
         attributes = [f"xt.grid = array<i32: {', '.join(str(dim) for dim in self.grid)}>"]
@@ -407,6 +424,8 @@ class TraceContext:
         input_count = 0
         output_count = 0
         for arg in self.kernel_args:
+            if not isinstance(arg, KernelArg):
+                continue
             loads = self.load_counts[arg.index]
             stores = self.store_counts[arg.index]
             if loads > 0 and stores == 0:

@@ -56,22 +56,31 @@ def check_matmul_pipeline():
     s = xt.Array(shape=(1, 512), dtype=xt.float32)
     bias = xt.Array(shape=(1, 512), dtype=xt.float32)
 
+    tile_m = 64
+    tile_n = 64
+    tile_k = 256
+
     @xt.kernel
-    def matmul(lhs, rhs, res, scale, bias):
+    def matmul(lhs, rhs, res, scale, bias, tm, tn, tk):
         bid_x = xt.bid(0)
         bid_y = xt.bid(1)
 
-        lhs_tile = xt.load(lhs, index=(bid_x, 0), shape=(64, 256))
-        rhs_tile = xt.load(rhs, index=(0, bid_y), shape=(256, 64), shared=1)
-        s_tile = xt.load(scale, index=(0, bid_y), shape=(1, 64), shared=1)
-        b_tile = xt.load(bias, index=(0, bid_y), shape=(1, 64), shared=1)
+        lhs_tile = xt.load(lhs, index=(bid_x, 0), shape=(tm, tk))
+        rhs_tile = xt.load(rhs, index=(0, bid_y), shape=(tk, tn), shared=1)
+        s_tile = xt.load(scale, index=(0, bid_y), shape=(1, tn), shared=1)
+        b_tile = xt.load(bias, index=(0, bid_y), shape=(1, tn), shared=1)
 
         t = xt.matmul(lhs_tile, rhs_tile)
         t = t * s_tile + b_tile
         t = xt.astype(t, dtype=xt.int8)
         xt.store(res, index=(bid_x, bid_y), tile=t)
 
-    module = xt.convert(matmul, args=(a, b, c, s, bias), grid=(16, 8, 1), double_buffering=True)
+    module = xt.convert(
+        matmul,
+        args=(a, b, c, s, bias, tile_m, tile_n, tile_k),
+        grid=(16, 8, 1),
+        double_buffering=True,
+    )
     actual = str(module)
 
     expected_snippets = (
