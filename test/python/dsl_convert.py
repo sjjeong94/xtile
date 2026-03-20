@@ -42,9 +42,9 @@ func.func @rowwise_softmax(%input: memref<128x64xf32>, %output: memref<128x64xf3
     if actual != expected:
         raise AssertionError(f"unexpected MLIR output:\n{actual}\n!=\n{expected}")
 
-    serialized = xt.serialize(module)
+    serialized = xt.xt_serialize(module)
     if serialized is not module:
-        raise AssertionError("xt.serialize should preserve the DSL module wrapper")
+        raise AssertionError("xt.xt_serialize should preserve the DSL module wrapper")
 
     return actual
 

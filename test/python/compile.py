@@ -26,8 +26,8 @@ def main():
     expected_snippets = (
         "nova.load(",
         "nova.square(",
-        "nova.barrier() {mode = 0 : i32}",
-        "nova.barrier() {mode = 1 : i32}",
+        "x1.barrier() {mode = 0 : i32}",
+        "x1.barrier() {mode = 1 : i32}",
         "nova.store(",
         "bank = 0 : i64",
         "space = 3 : i64",

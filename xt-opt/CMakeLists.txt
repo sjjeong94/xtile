@@ -17,6 +17,7 @@ target_link_libraries(xt-opt PRIVATE
   MLIRSupport
   MLIRTransforms
   MLIRXT
+  MLIRX1
   MLIROptLib
 )
 

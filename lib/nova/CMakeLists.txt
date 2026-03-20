@@ -5,6 +5,7 @@ add_mlir_dialect_library(MLIRNova
   NovaOptimize.cpp
   NovaOps.cpp
   NovaThreading.cpp
+  NovaToX1.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/include/nova
@@ -18,5 +19,7 @@ add_mlir_dialect_library(MLIRNova
   MLIRFuncDialect
   MLIRIR
   MLIRPass
+  MLIRRewrite
   MLIRTransforms
+  MLIRX1
 )

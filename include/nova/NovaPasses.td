@@ -51,4 +51,16 @@ def NovaBarrier : Pass<"nova-barrier", "::mlir::func::FuncOp"> {
   ];
 }
 
+def NovaToX1 : Pass<"nova-to-x1", "::mlir::func::FuncOp"> {
+  let summary = "Lower supported nova operations into x1 operations";
+  let description = [{
+    Rewrites the subset of nova operations that already have x1 equivalents.
+    This change starts with nova.barrier -> x1.barrier.
+  }];
+  let dependentDialects = [
+    "mlir::nova::NovaDialect",
+    "mlir::x1::X1Dialect"
+  ];
+}
+
 #endif // NOVA_PASS

@@ -58,6 +58,10 @@ if(TARGET xt)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/barrier.py
   )
   add_test(
+    NAME xt-python-to-x1
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/to_x1.py
+  )
+  add_test(
     NAME xt-python-compile
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/compile.py
   )
@@ -86,6 +90,10 @@ if(TARGET xt)
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
   set_tests_properties(xt-python-barrier PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+  set_tests_properties(xt-python-to-x1 PROPERTIES
     ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )

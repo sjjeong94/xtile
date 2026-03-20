@@ -2,6 +2,7 @@
 #include "nova/NovaPasses.h"
 #include "xt/XTDialect.h"
 #include "xt/XTPasses.h"
+#include "x1/X1Dialect.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -21,6 +22,7 @@ int main(int argc, char **argv) {
 
   mlir::DialectRegistry registry;
   registry.insert<mlir::nova::NovaDialect, mlir::xt::XTDialect,
+                  mlir::x1::X1Dialect,
                   mlir::arith::ArithDialect, mlir::cf::ControlFlowDialect,
                   mlir::func::FuncDialect,
                   mlir::math::MathDialect, mlir::memref::MemRefDialect,

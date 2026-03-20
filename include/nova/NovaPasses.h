@@ -11,6 +11,7 @@ std::unique_ptr<Pass> createNovaAllocatePass();
 std::unique_ptr<Pass> createNovaBarrierPass();
 std::unique_ptr<Pass> createNovaOptimizePass();
 std::unique_ptr<Pass> createNovaThreadingPass();
+std::unique_ptr<Pass> createNovaToX1Pass();
 
 #define GEN_PASS_DECL
 #include "nova/NovaPasses.h.inc"

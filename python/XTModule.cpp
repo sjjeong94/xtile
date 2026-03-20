@@ -18,6 +18,7 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
+#include "x1/X1Dialect.h"
 
 #include "mlir-c/Bindings/Python/Interop.h"
 
@@ -53,6 +54,7 @@ MlirModule unwrapModule(nb::handle moduleObject) {
 void loadRequiredDialects(mlir::MLIRContext &context) {
   context.getOrLoadDialect<mlir::nova::NovaDialect>();
   context.getOrLoadDialect<mlir::xt::XTDialect>();
+  context.getOrLoadDialect<mlir::x1::X1Dialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
   context.getOrLoadDialect<mlir::func::FuncDialect>();
@@ -148,15 +150,15 @@ nb::object runPass(nb::object moduleObject, const char *passName,
   return moduleObject;
 }
 
-nb::object toNova(nb::object moduleObject) {
-  return runPass(moduleObject, "xtile.to_nova", [](mlir::PassManager &passManager) {
+nb::object xtToNova(nb::object moduleObject) {
+  return runPass(moduleObject, "xtile.xt_to_nova", [](mlir::PassManager &passManager) {
     passManager.nest<mlir::func::FuncOp>().addPass(
         mlir::xt::createXTToNovaPass());
   });
 }
 
-nb::object serialize(nb::object moduleObject) {
-  return runPass(moduleObject, "xtile.serialize",
+nb::object xtSerialize(nb::object moduleObject) {
+  return runPass(moduleObject, "xtile.xt_serialize",
                  [](mlir::PassManager &passManager) {
                    passManager.nest<mlir::func::FuncOp>().addPass(
                        mlir::xt::createXTSerializePass());
@@ -195,14 +197,22 @@ nb::object novaBarrier(nb::object moduleObject) {
                  });
 }
 
+nb::object novaToX1(nb::object moduleObject) {
+  return runPass(moduleObject, "xtile.nova_to_x1",
+                 [](mlir::PassManager &passManager) {
+                   passManager.nest<mlir::func::FuncOp>().addPass(
+                       mlir::nova::createNovaToX1Pass());
+                 });
+}
+
 } // namespace
 
 NB_MODULE(_xtile, m) {
   m.def("parse", &parseModule, nb::arg("asm"),
         "Parse MLIR assembly into an xtile module object compatible with xtile passes.");
-  m.def("to_nova", &toNova, nb::arg("module"),
+  m.def("xt_to_nova", &xtToNova, nb::arg("module"),
         "Run the xt-to-nova lowering pass on an mlir.ir.Module.");
-  m.def("serialize", &serialize, nb::arg("module"),
+  m.def("xt_serialize", &xtSerialize, nb::arg("module"),
         "Run the xt-serialize pass on an mlir.ir.Module.");
   m.def("nova_optimize", &novaOptimize, nb::arg("module"),
         "Run the nova-optimize pass on an mlir.ir.Module.");
@@ -212,6 +222,8 @@ NB_MODULE(_xtile, m) {
         "Run the nova-threading pass on an mlir.ir.Module.");
   m.def("nova_barrier", &novaBarrier, nb::arg("module"),
         "Run the nova-barrier pass on an mlir.ir.Module.");
+  m.def("nova_to_x1", &novaToX1, nb::arg("module"),
+        "Run the nova-to-x1 pass on an mlir.ir.Module.");
   m.def("_parse_module", &parseModule, nb::arg("asm"));
   m.def("_module_asm",
         [](nb::object moduleObject) { return moduleToString(unwrapModule(moduleObject)); },

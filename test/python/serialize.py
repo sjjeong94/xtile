@@ -17,9 +17,9 @@ def main():
         """
     )
 
-    serialized = xt.serialize(module)
+    serialized = xt.xt_serialize(module)
     if serialized is not module:
-        raise AssertionError("xt.serialize should return the original module object")
+        raise AssertionError("xt.xt_serialize should return the original module object")
 
     module_asm = xt._module_asm(module)
     if "xt.get_tile_block_id" in module_asm:

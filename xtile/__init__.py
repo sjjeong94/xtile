@@ -111,14 +111,14 @@ def parse(asm: str) -> Module:
     return Module(_native.parse(wrapped_asm), display_asm=display_asm)
 
 
-def to_nova(module: Any):
-    result = _native.to_nova(_normalize_module_object(module))
+def xt_to_nova(module: Any):
+    result = _native.xt_to_nova(_normalize_module_object(module))
     _clear_display_if_wrapped(module)
     return module if isinstance(module, Module) else result
 
 
-def serialize(module: Any):
-    result = _native.serialize(_normalize_module_object(module))
+def xt_serialize(module: Any):
+    result = _native.xt_serialize(_normalize_module_object(module))
     _clear_display_if_wrapped(module)
     return module if isinstance(module, Module) else result
 
@@ -147,13 +147,20 @@ def nova_barrier(module: Any):
     return module if isinstance(module, Module) else result
 
 
+def nova_to_x1(module: Any):
+    result = _native.nova_to_x1(_normalize_module_object(module))
+    _clear_display_if_wrapped(module)
+    return module if isinstance(module, Module) else result
+
+
 def compile(module: Any):
-    module = serialize(module)
-    module = to_nova(module)
+    module = xt_serialize(module)
+    module = xt_to_nova(module)
     module = nova_optimize(module)
     module = nova_allocate(module)
     module = nova_threading(module)
     module = nova_barrier(module)
+    module = nova_to_x1(module)
     return module
 
 
@@ -197,12 +204,13 @@ __all__ = [
     "nova_allocate",
     "nova_barrier",
     "nova_optimize",
+    "nova_to_x1",
     "nova_threading",
     "parse",
     "reciprocal",
     "reshape",
     "rsqrt",
-    "serialize",
+    "xt_serialize",
     "sigmoid",
     "silu",
     "sin",
@@ -210,7 +218,7 @@ __all__ = [
     "sub",
     "sum",
     "tanh",
-    "to_nova",
+    "xt_to_nova",
     "transpose",
     "exp",
 ]

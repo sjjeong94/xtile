@@ -13,9 +13,9 @@ def main():
         }
         """
     )
-    lowered = xt.to_nova(module)
+    lowered = xt.xt_to_nova(module)
     if lowered is not module:
-        raise AssertionError("xt.to_nova should return the original module object")
+        raise AssertionError("xt.xt_to_nova should return the original module object")
 
     module_asm = xt._module_asm(module)
     if "nova.elementwise" not in module_asm:
