@@ -115,11 +115,16 @@ static FailureOr<TensorLayout> propagateLayout(Operation *op, Type resultType,
 static FailureOr<TensorLayout> propagateBinaryLayout(Operation *op, Type resultType,
                                                      const TensorLayout &lhs,
                                                      const TensorLayout &rhs) {
-  if (lhs.threadCount != rhs.threadCount) {
+  bool same = lhs.threadCount == rhs.threadCount;
+  bool rhsBroadcast = rhs.threadCount == 1;
+  bool lhsBroadcast = lhs.threadCount == 1;
+  if (!same && !rhsBroadcast && !lhsBroadcast) {
     op->emitOpError("requires matching x1 lane counts");
     return failure();
   }
-  return propagateLayout(op, resultType, lhs);
+
+  const TensorLayout &driver = lhs.threadCount >= rhs.threadCount ? lhs : rhs;
+  return propagateLayout(op, resultType, driver);
 }
 
 static int64_t getFirstBank(const TensorLayout &layout) {
@@ -128,6 +133,12 @@ static int64_t getFirstBank(const TensorLayout &layout) {
 
 static int64_t getLastBank(const TensorLayout &layout) {
   return layout.baseBank + layout.threadCount - 1;
+}
+
+static int64_t getLaneBank(const TensorLayout &layout, int64_t lane) {
+  if (layout.threadCount == 1)
+    return layout.baseBank;
+  return layout.baseBank + lane;
 }
 
 static int64_t getMatrixRowsPerLane(const TensorLayout &layout) {
@@ -201,10 +212,10 @@ static void createX1Broadcast(OpBuilder &builder, nova::BroadcastOp op,
                               const TensorLayout &rhsLayout,
                               const TensorLayout &resultLayout) {
   builder.create<x1::BroadcastOp>(
-      op.getLoc(), builder.getI64IntegerAttr(getFirstBank(lhsLayout)),
-      builder.getI64IntegerAttr(getLastBank(lhsLayout)),
-      builder.getI64IntegerAttr(getFirstBank(rhsLayout)),
-      builder.getI64IntegerAttr(getLastBank(rhsLayout)),
+      op.getLoc(), builder.getI64IntegerAttr(getLaneBank(lhsLayout, 0)),
+      builder.getI64IntegerAttr(getLaneBank(lhsLayout, resultLayout.threadCount - 1)),
+      builder.getI64IntegerAttr(getLaneBank(rhsLayout, 0)),
+      builder.getI64IntegerAttr(getLaneBank(rhsLayout, resultLayout.threadCount - 1)),
       builder.getI64IntegerAttr(getFirstBank(resultLayout)),
       builder.getI64IntegerAttr(getLastBank(resultLayout)), op.getLhsAAttr(),
       op.getLhsBAttr(), op.getModeAttr(), op.getRhsAAttr(), op.getRhsBAttr());
@@ -246,6 +257,19 @@ static LogicalResult createX1Matmul(OpBuilder &builder, nova::MatmulOp op,
       builder.getI64IntegerAttr(resultType.getShape()[1]),
       builder.getI64IntegerAttr(lhsType.getShape()[1]));
   return success();
+}
+
+static void createX1ScalarFma(OpBuilder &builder, nova::ScalarFmaOp op,
+                              const TensorLayout &inputLayout,
+                              const TensorLayout &resultLayout) {
+  builder.create<x1::ScalarFmaOp>(
+      op.getLoc(), builder.getI64IntegerAttr(getFirstBank(inputLayout)),
+      builder.getI64IntegerAttr(getLastBank(inputLayout)),
+      builder.getI64IntegerAttr(getFirstBank(resultLayout)),
+      builder.getI64IntegerAttr(getLastBank(resultLayout)),
+      builder.getI64IntegerAttr(getMatrixRowsPerLane(inputLayout)),
+      builder.getI64IntegerAttr(inputLayout.shape[1]), op.getAAttr(),
+      op.getBAttr());
 }
 
 class NovaToX1Pass : public mlir::nova::impl::NovaToX1Base<NovaToX1Pass> {
@@ -344,6 +368,70 @@ public:
             builder, exp, inputIt->second, *resultLayout,
             getMatrixRowsPerLane(inputIt->second), inputIt->second.shape[1]);
         layouts[exp.getResult()] = *resultLayout;
+        eraseOps.push_back(operation);
+        continue;
+      }
+
+      if (auto square = dyn_cast<nova::SquareOp>(operation)) {
+        auto inputIt = layouts.find(square.getInput());
+        if (inputIt == layouts.end()) {
+          square.emitOpError("requires lowered input metadata");
+          signalPassFailure();
+          return;
+        }
+
+        FailureOr<TensorLayout> resultLayout =
+            propagateLayout(square, square.getResult().getType(), inputIt->second);
+        if (failed(resultLayout)) {
+          signalPassFailure();
+          return;
+        }
+        createX1UnaryBankCommand<x1::SquareOp>(
+            builder, square, inputIt->second, *resultLayout,
+            getMatrixRowsPerLane(inputIt->second), inputIt->second.shape[1]);
+        layouts[square.getResult()] = *resultLayout;
+        eraseOps.push_back(operation);
+        continue;
+      }
+
+      if (auto scalarFma = dyn_cast<nova::ScalarFmaOp>(operation)) {
+        auto inputIt = layouts.find(scalarFma.getInput());
+        if (inputIt == layouts.end()) {
+          scalarFma.emitOpError("requires lowered input metadata");
+          signalPassFailure();
+          return;
+        }
+
+        FailureOr<TensorLayout> resultLayout = propagateLayout(
+            scalarFma, scalarFma.getResult().getType(), inputIt->second);
+        if (failed(resultLayout)) {
+          signalPassFailure();
+          return;
+        }
+        createX1ScalarFma(builder, scalarFma, inputIt->second, *resultLayout);
+        layouts[scalarFma.getResult()] = *resultLayout;
+        eraseOps.push_back(operation);
+        continue;
+      }
+
+      if (auto rsqrt = dyn_cast<nova::RsqrtOp>(operation)) {
+        auto inputIt = layouts.find(rsqrt.getInput());
+        if (inputIt == layouts.end()) {
+          rsqrt.emitOpError("requires lowered input metadata");
+          signalPassFailure();
+          return;
+        }
+
+        FailureOr<TensorLayout> resultLayout =
+            propagateLayout(rsqrt, rsqrt.getResult().getType(), inputIt->second);
+        if (failed(resultLayout)) {
+          signalPassFailure();
+          return;
+        }
+        createX1UnaryBankCommand<x1::RsqrtOp>(
+            builder, rsqrt, inputIt->second, *resultLayout,
+            getMatrixRowsPerLane(inputIt->second), inputIt->second.shape[1]);
+        layouts[rsqrt.getResult()] = *resultLayout;
         eraseOps.push_back(operation);
         continue;
       }

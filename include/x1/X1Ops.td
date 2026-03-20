@@ -93,6 +93,25 @@ def X1_BroadcastOp : X1_Op<"broadcast"> {
 def X1_ExpOp : X1_UnaryBankCommandOp<
     "exp", "x1 exp command">;
 
+def X1_SquareOp : X1_UnaryBankCommandOp<
+    "square", "x1 square command">;
+
+def X1_ScalarFmaOp : X1_Op<"scalar_fma"> {
+  let summary = "x1 scalar fma command";
+  let arguments = (ins I64Attr:$inp0,
+                       I64Attr:$inp1,
+                       I64Attr:$res0,
+                       I64Attr:$res1,
+                       I64Attr:$m,
+                       I64Attr:$n,
+                       F32Attr:$a,
+                       F32Attr:$b);
+  let assemblyFormat = "`(` `)` attr-dict";
+}
+
+def X1_RsqrtOp : X1_UnaryBankCommandOp<
+    "rsqrt", "x1 rsqrt command">;
+
 def X1_ReciprocalOp : X1_UnaryBankCommandOp<
     "reciprocal", "x1 reciprocal command">;
 

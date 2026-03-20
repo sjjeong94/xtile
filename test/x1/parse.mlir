@@ -8,7 +8,10 @@ module {
     x1.matmul() {lhs0_bank = 0 : i64, lhs1_bank = 1 : i64, rhs0_bank = 2 : i64, rhs1_bank = 3 : i64, res0_bank = 4 : i64, res1_bank = 5 : i64, m = 32 : i64, n = 128 : i64, k = 64 : i64}
     x1.reduce() {inp0 = 0 : i64, inp1 = 1 : i64, res0 = 2 : i64, res1 = 3 : i64, m = 32 : i64, n = 64 : i64, mode = 1 : i32}
     x1.broadcast() {lhs0 = 0 : i64, lhs1 = 1 : i64, rhs0 = 2 : i64, rhs1 = 3 : i64, res0 = 4 : i64, res1 = 5 : i64, lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 3 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32}
+    x1.square() {inp0 = 4 : i64, inp1 = 5 : i64, res0 = 6 : i64, res1 = 7 : i64, m = 32 : i64, n = 64 : i64}
     x1.exp() {inp0 = 4 : i64, inp1 = 5 : i64, res0 = 2 : i64, res1 = 3 : i64, m = 32 : i64, n = 64 : i64}
+    x1.scalar_fma() {inp0 = 2 : i64, inp1 = 3 : i64, res0 = 4 : i64, res1 = 5 : i64, m = 32 : i64, n = 1 : i64, a = 1.562500e-02 : f32, b = 9.99999974E-6 : f32}
+    x1.rsqrt() {inp0 = 4 : i64, inp1 = 5 : i64, res0 = 2 : i64, res1 = 3 : i64, m = 32 : i64, n = 1 : i64}
     x1.reciprocal() {inp0 = 2 : i64, inp1 = 3 : i64, res0 = 4 : i64, res1 = 5 : i64, m = 64 : i64, n = 1 : i64}
     func.return
   }
@@ -21,5 +24,8 @@ module {
 // CHECK: x1.matmul() {k = 64 : i64, lhs0_bank = 0 : i64, lhs1_bank = 1 : i64, m = 32 : i64, n = 128 : i64, res0_bank = 4 : i64, res1_bank = 5 : i64, rhs0_bank = 2 : i64, rhs1_bank = 3 : i64}
 // CHECK: x1.reduce() {inp0 = 0 : i64, inp1 = 1 : i64, m = 32 : i64, mode = 1 : i32, n = 64 : i64, res0 = 2 : i64, res1 = 3 : i64}
 // CHECK: x1.broadcast() {lhs0 = 0 : i64, lhs1 = 1 : i64, lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 3 : i32, res0 = 4 : i64, res1 = 5 : i64, rhs0 = 2 : i64, rhs1 = 3 : i64, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32}
+// CHECK: x1.square() {inp0 = 4 : i64, inp1 = 5 : i64, m = 32 : i64, n = 64 : i64, res0 = 6 : i64, res1 = 7 : i64}
 // CHECK: x1.exp() {inp0 = 4 : i64, inp1 = 5 : i64, m = 32 : i64, n = 64 : i64, res0 = 2 : i64, res1 = 3 : i64}
+// CHECK: x1.scalar_fma() {a = 1.562500e-02 : f32, b = 9.99999974E-6 : f32, inp0 = 2 : i64, inp1 = 3 : i64, m = 32 : i64, n = 1 : i64, res0 = 4 : i64, res1 = 5 : i64}
+// CHECK: x1.rsqrt() {inp0 = 4 : i64, inp1 = 5 : i64, m = 32 : i64, n = 1 : i64, res0 = 2 : i64, res1 = 3 : i64}
 // CHECK: x1.reciprocal() {inp0 = 2 : i64, inp1 = 3 : i64, m = 64 : i64, n = 1 : i64, res0 = 4 : i64, res1 = 5 : i64}
