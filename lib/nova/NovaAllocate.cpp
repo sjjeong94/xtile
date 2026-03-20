@@ -1,5 +1,5 @@
-#include "nova/NovaPasses.h"
 #include "nova/NovaOps.h"
+#include "nova/NovaPasses.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -23,7 +23,6 @@ using namespace mlir;
 
 namespace {
 constexpr int64_t kBankSize = 2048 * 64;
-constexpr int64_t kBankSize2 = kBankSize * 2;
 
 enum class MemorySpace : int64_t {
   DRAM_INPUT = 0,
@@ -40,12 +39,14 @@ enum class MemorySpace : int64_t {
 
 struct AllocationInfo {
   OpResult value;
+  int64_t slice;
   int64_t size;
   int64_t addr;
 };
 
-struct ValueLifetime {
+struct SliceLifetime {
   OpResult value;
+  int64_t slice;
   int64_t createdAt;
   int64_t deletedAt;
   int64_t size;
@@ -82,19 +83,38 @@ static FailureOr<int64_t> getTensorSizeInBytes(RankedTensorType type) {
   return type.getNumElements() * *elementBytes;
 }
 
+static FailureOr<int64_t> getTensorSizeInBytesForShape(RankedTensorType type,
+                                                       ArrayAttr shapeAttr) {
+  if (!type || !shapeAttr)
+    return failure();
+
+  FailureOr<int64_t> elementBytes = getElementByteWidth(type.getElementType());
+  if (failed(elementBytes))
+    return failure();
+
+  int64_t numElements = 1;
+  for (Attribute attr : shapeAttr) {
+    auto intAttr = dyn_cast<IntegerAttr>(attr);
+    if (!intAttr)
+      return failure();
+    numElements *= intAttr.getInt();
+  }
+  return numElements * *elementBytes;
+}
+
 static int64_t alignToBank(int64_t addr) {
-  return llvm::alignTo(addr, kBankSize2);
+  return llvm::alignTo(addr, kBankSize);
 }
 
 static std::pair<int64_t, int64_t> getBankRange(int64_t addr, int64_t size) {
-  int64_t startBank = addr / kBankSize2;
-  int64_t endBank = (addr + size - 1) / kBankSize2 + 1;
+  int64_t startBank = addr / kBankSize;
+  int64_t endBank = (addr + size - 1) / kBankSize + 1;
   return {startBank, endBank};
 }
 
 static int64_t getBankAlignedEnd(const AllocationInfo &info) {
   auto [_, endBank] = getBankRange(info.addr, info.size);
-  return endBank * kBankSize2;
+  return endBank * kBankSize;
 }
 
 static bool isAllocationEligibleType(Type type) {
@@ -143,22 +163,55 @@ static ResultProperties getResultProperties(OpResult value) {
 }
 
 static RankedTensorType withEncoding(RankedTensorType type,
-                                     std::optional<int64_t> bank,
+                                     std::optional<int64_t> bank0,
+                                     std::optional<int64_t> bank1,
                                      std::optional<MemorySpace> space) {
   MLIRContext *context = type.getContext();
   NamedAttrList attrs;
   if (auto dict = dyn_cast_or_null<DictionaryAttr>(type.getEncoding()))
     attrs.append(dict.getValue());
-  if (bank) {
-    attrs.set("bank", IntegerAttr::get(IntegerType::get(context, 64), *bank));
+  attrs.erase("bank");
+  if (bank0) {
+    attrs.set("bank0", IntegerAttr::get(IntegerType::get(context, 64), *bank0));
+  } else {
+    attrs.erase("bank0");
+  }
+  if (bank1) {
+    attrs.set("bank1", IntegerAttr::get(IntegerType::get(context, 64), *bank1));
+  } else {
+    attrs.erase("bank1");
   }
   if (space) {
-    attrs.set("space",
-              IntegerAttr::get(IntegerType::get(context, 64),
-                               static_cast<int64_t>(*space)));
+    attrs.set("space", IntegerAttr::get(IntegerType::get(context, 64),
+                                        static_cast<int64_t>(*space)));
   }
   return RankedTensorType::get(type.getShape(), type.getElementType(),
                                DictionaryAttr::get(context, attrs));
+}
+
+static SmallVector<int64_t> getAllocationSliceSizes(RankedTensorType type) {
+  SmallVector<int64_t> sizes;
+  auto encoding = dyn_cast_or_null<DictionaryAttr>(type.getEncoding());
+  if (encoding) {
+    if (auto shape0 = dyn_cast_or_null<ArrayAttr>(encoding.get("shape0"))) {
+      FailureOr<int64_t> size = getTensorSizeInBytesForShape(type, shape0);
+      if (succeeded(size))
+        sizes.push_back(*size);
+    }
+    if (auto shape1 = dyn_cast_or_null<ArrayAttr>(encoding.get("shape1"))) {
+      FailureOr<int64_t> size = getTensorSizeInBytesForShape(type, shape1);
+      if (succeeded(size) && *size > 0)
+        sizes.push_back(*size);
+    }
+  }
+
+  if (!sizes.empty())
+    return sizes;
+
+  FailureOr<int64_t> size = getTensorSizeInBytes(type);
+  if (succeeded(size))
+    sizes.push_back(*size);
+  return sizes;
 }
 
 class NovaAllocatePass
@@ -184,7 +237,7 @@ public:
 
     SmallVector<SmallVector<OpResult>> createdAt(ops.size());
     SmallVector<SmallVector<OpResult>> deletedAt(ops.size() + 1);
-    SmallVector<ValueLifetime> lifetimes;
+    SmallVector<SliceLifetime> lifetimes;
     DenseMap<Value, ResultProperties> resultProperties;
 
     for (Operation *op : ops) {
@@ -198,8 +251,8 @@ public:
           continue;
 
         auto tensorType = cast<RankedTensorType>(result.getType());
-        FailureOr<int64_t> size = getTensorSizeInBytes(tensorType);
-        if (failed(size)) {
+        SmallVector<int64_t> sliceSizes = getAllocationSliceSizes(tensorType);
+        if (sliceSizes.empty()) {
           op->emitOpError("nova-allocate requires tensor element types with a "
                           "known byte width");
           signalPassFailure();
@@ -213,7 +266,9 @@ public:
 
         createdAt[created].push_back(result);
         deletedAt[deleted].push_back(result);
-        lifetimes.push_back(ValueLifetime{result, created, deleted, *size});
+        for (auto [slice, size] : llvm::enumerate(sliceSizes))
+          lifetimes.push_back(SliceLifetime{result, static_cast<int64_t>(slice),
+                                            created, deleted, size});
       }
     }
 
@@ -224,13 +279,17 @@ public:
           continue;
 
         auto type = cast<RankedTensorType>(result.getType());
-        result.setType(withEncoding(type, std::nullopt, it->second.space));
+        std::optional<int64_t> bank0 = it->second.space &&
+                                               *it->second.space != MemorySpace::SRAM
+                                           ? std::optional<int64_t>(0)
+                                           : std::nullopt;
+        result.setType(withEncoding(type, bank0, std::nullopt, it->second.space));
       }
     }
 
-    DenseMap<Value, ValueLifetime> lifetimeByValue;
-    for (const ValueLifetime &lifetime : lifetimes)
-      lifetimeByValue[lifetime.value] = lifetime;
+    DenseMap<std::pair<Value, int64_t>, SliceLifetime> lifetimeByValue;
+    for (const SliceLifetime &lifetime : lifetimes)
+      lifetimeByValue[{lifetime.value, lifetime.slice}] = lifetime;
 
     SmallVector<AllocationInfo> liveAllocs;
     auto sortLiveAllocs = [&]() {
@@ -246,8 +305,9 @@ public:
       });
     };
 
-    auto allocateValue = [&](OpResult value) -> FailureOr<int64_t> {
-      const ValueLifetime &lifetime = lifetimeByValue[value];
+    auto allocateSlice = [&](OpResult value,
+                             int64_t slice) -> FailureOr<int64_t> {
+      const SliceLifetime &lifetime = lifetimeByValue[{value, slice}];
       int64_t start = 0;
       sortLiveAllocs();
       for (const AllocationInfo &info : liveAllocs) {
@@ -257,7 +317,7 @@ public:
         start = getBankAlignedEnd(info);
       }
       start = alignToBank(start);
-      liveAllocs.push_back(AllocationInfo{value, lifetime.size, start});
+      liveAllocs.push_back(AllocationInfo{value, slice, lifetime.size, start});
       sortLiveAllocs();
       return start;
     };
@@ -267,17 +327,39 @@ public:
         deallocateValue(value);
 
       for (OpResult value : createdAt[index]) {
-        FailureOr<int64_t> addr = allocateValue(value);
-        if (failed(addr)) {
+        auto type = cast<RankedTensorType>(value.getType());
+        SmallVector<int64_t> sliceSizes = getAllocationSliceSizes(type);
+        std::optional<int64_t> bank0;
+        std::optional<int64_t> bank1;
+        if (!sliceSizes.empty()) {
+          FailureOr<int64_t> addr0 = allocateSlice(value, 0);
+          if (failed(addr0)) {
+            value.getOwner()->emitOpError("nova-allocate failed to assign an "
+                                          "address");
+            signalPassFailure();
+            return;
+          }
+          bank0 = *addr0 / kBankSize;
+        }
+        if (sliceSizes.size() > 1) {
+          FailureOr<int64_t> addr1 = allocateSlice(value, 1);
+          if (failed(addr1)) {
+            value.getOwner()->emitOpError("nova-allocate failed to assign an "
+                                          "address");
+            signalPassFailure();
+            return;
+          }
+          bank1 = *addr1 / kBankSize;
+        }
+
+        if (!bank0) {
           value.getOwner()->emitOpError("nova-allocate failed to assign an "
                                         "address");
           signalPassFailure();
           return;
         }
-
-        auto type = cast<RankedTensorType>(value.getType());
-        value.setType(withEncoding(type, *addr / kBankSize,
-                                   resultProperties[value].space));
+        value.setType(
+            withEncoding(type, bank0, bank1, resultProperties[value].space));
       }
     }
 

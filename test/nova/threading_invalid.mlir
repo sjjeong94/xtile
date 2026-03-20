@@ -17,5 +17,5 @@ func.func @elementwise_threading_mismatch(%src: memref<10x8xf32>) {
   func.return
 }
 
-// ERR: error: 'nova.broadcast' op lhs and rhs threading must both be present
-// ERR: error: 'nova.elementwise' op lhs and rhs threading must match
+// ERR: error: 'nova.broadcast' op lhs and rhs slice metadata must both be present
+// ERR: error: 'nova.elementwise' op lhs and rhs slice metadata must match

@@ -16,7 +16,7 @@ namespace mlir::nova {
 using namespace mlir;
 
 namespace {
-static std::optional<int64_t> getThreading(Type type) {
+static std::optional<DictionaryAttr> getEncoding(Type type) {
   auto tensorType = dyn_cast<RankedTensorType>(type);
   if (!tensorType)
     return std::nullopt;
@@ -24,35 +24,87 @@ static std::optional<int64_t> getThreading(Type type) {
   auto encoding = dyn_cast_or_null<DictionaryAttr>(tensorType.getEncoding());
   if (!encoding)
     return std::nullopt;
+  return encoding;
+}
 
-  auto attr = dyn_cast_or_null<IntegerAttr>(encoding.get("threading"));
+static std::optional<SmallVector<int64_t>> getEncodingI64Array(Type type,
+                                                               StringRef name) {
+  std::optional<DictionaryAttr> encoding = getEncoding(type);
+  if (!encoding)
+    return std::nullopt;
+
+  auto attr = dyn_cast_or_null<ArrayAttr>((*encoding).get(name));
   if (!attr)
     return std::nullopt;
-  return attr.getInt();
+
+  SmallVector<int64_t> values;
+  values.reserve(attr.size());
+  for (Attribute element : attr) {
+    auto intAttr = dyn_cast<IntegerAttr>(element);
+    if (!intAttr)
+      return std::nullopt;
+    values.push_back(intAttr.getInt());
+  }
+  return values;
 }
 
-static RankedTensorType withThreading(RankedTensorType type, int64_t threading) {
-  MLIRContext *context = type.getContext();
-  NamedAttrList attrs;
-  if (auto dict = dyn_cast_or_null<DictionaryAttr>(type.getEncoding()))
-    attrs.append(dict.getValue());
-  attrs.set("threading",
-            IntegerAttr::get(IntegerType::get(context, 64), threading));
-  return RankedTensorType::get(type.getShape(), type.getElementType(),
-                               DictionaryAttr::get(context, attrs));
+static ArrayAttr getI64ArrayAttr(MLIRContext *context, ArrayRef<int64_t> values) {
+  SmallVector<Attribute> elements;
+  elements.reserve(values.size());
+  for (int64_t value : values)
+    elements.push_back(IntegerAttr::get(IntegerType::get(context, 64), value));
+  return ArrayAttr::get(context, elements);
 }
 
-static RankedTensorType withoutThreading(RankedTensorType type) {
+static std::optional<int64_t> getThreadRows(Type type) {
+  std::optional<SmallVector<int64_t>> shape0 = getEncodingI64Array(type, "shape0");
+  if (!shape0 || shape0->empty())
+    return std::nullopt;
+  return (*shape0)[0];
+}
+
+static std::optional<int64_t> getSecondSliceRows(Type type) {
+  std::optional<SmallVector<int64_t>> shape1 = getEncodingI64Array(type, "shape1");
+  if (!shape1 || shape1->empty())
+    return std::nullopt;
+  return (*shape1)[0];
+}
+
+static RankedTensorType withSliceMetadata(RankedTensorType type,
+                                          std::optional<int64_t> firstRows) {
   MLIRContext *context = type.getContext();
   NamedAttrList attrs;
   if (auto dict = dyn_cast_or_null<DictionaryAttr>(type.getEncoding()))
     attrs.append(dict.getValue());
   attrs.erase("threading");
 
-  Attribute encoding;
-  if (!attrs.empty())
-    encoding = DictionaryAttr::get(context, attrs);
-  return RankedTensorType::get(type.getShape(), type.getElementType(), encoding);
+  if (type.hasStaticShape() && type.getRank() == 2) {
+    int64_t rows = type.getShape()[0];
+    int64_t cols = type.getShape()[1];
+    int64_t slice0Rows = firstRows ? std::min(rows, *firstRows) : rows;
+    int64_t secondRows = firstRows ? std::max<int64_t>(rows - slice0Rows, 0) : 0;
+
+    attrs.set("start0", getI64ArrayAttr(context, {0, 0}));
+    attrs.set("shape0", getI64ArrayAttr(context, {slice0Rows, cols}));
+    if (firstRows && secondRows > 0) {
+      attrs.set("start1", getI64ArrayAttr(context, {slice0Rows, 0}));
+      attrs.set("shape1", getI64ArrayAttr(context, {secondRows, cols}));
+    } else {
+      attrs.erase("start1");
+      attrs.erase("shape1");
+    }
+  }
+
+  return RankedTensorType::get(type.getShape(), type.getElementType(),
+                               DictionaryAttr::get(context, attrs));
+}
+
+static RankedTensorType withThreading(RankedTensorType type, int64_t threading) {
+  return withSliceMetadata(type, threading);
+}
+
+static RankedTensorType withoutThreading(RankedTensorType type) {
+  return withSliceMetadata(type, std::nullopt);
 }
 
 class NovaThreadingPass
@@ -62,14 +114,14 @@ public:
     func::FuncOp func = getOperation();
 
     auto propagateThreading = [&](Value input, Value result) {
-      std::optional<int64_t> threading = getThreading(input.getType());
-      if (!threading)
+      std::optional<int64_t> firstRows = getThreadRows(input.getType());
+      if (!firstRows)
         return;
 
       auto resultType = dyn_cast<RankedTensorType>(result.getType());
       if (!resultType)
         return;
-      result.setType(withThreading(resultType, *threading));
+      result.setType(withThreading(resultType, *firstRows));
     };
 
     WalkResult walkResult = func.walk([&](Operation *op) -> WalkResult {
@@ -112,12 +164,12 @@ public:
         propagateThreading(reduce.getInput(), reduce.getResult());
         return WalkResult::advance();
       }
-      if (auto matmul = dyn_cast<nova::MatmulOp>(op)) {
-        if (std::optional<int64_t> lhsThreading =
-                getThreading(matmul.getLhs().getType())) {
+        if (auto matmul = dyn_cast<nova::MatmulOp>(op)) {
+        if (std::optional<int64_t> lhsThreadRows =
+                getThreadRows(matmul.getLhs().getType())) {
           auto resultType = dyn_cast<RankedTensorType>(matmul.getResult().getType());
           if (resultType)
-            matmul.getResult().setType(withThreading(resultType, *lhsThreading));
+            matmul.getResult().setType(withThreading(resultType, *lhsThreadRows));
         }
 
         auto stripThreading = [&](Value value) {
@@ -126,7 +178,7 @@ public:
             return;
 
           auto type = dyn_cast<RankedTensorType>(result.getType());
-          if (!type || !getThreading(type))
+          if (!type || !getThreadRows(type))
             return;
           result.setType(withoutThreading(type));
         };
@@ -139,12 +191,12 @@ public:
 
       auto propagateBroadcastThreading = [&](Value lhs, Value rhs, Value result)
           -> WalkResult {
-        std::optional<int64_t> lhsThreading = getThreading(lhs.getType());
-        std::optional<int64_t> rhsThreading = getThreading(rhs.getType());
-        if (!lhsThreading && !rhsThreading)
+        std::optional<int64_t> lhsFirstRows = getThreadRows(lhs.getType());
+        std::optional<int64_t> rhsFirstRows = getThreadRows(rhs.getType());
+        if (!lhsFirstRows && !rhsFirstRows)
           return WalkResult::advance();
-        if (!lhsThreading || !rhsThreading) {
-          op->emitOpError("lhs and rhs threading must both be present");
+        if (!lhsFirstRows || !rhsFirstRows) {
+          op->emitOpError("lhs and rhs slice metadata must both be present");
           signalPassFailure();
           return WalkResult::interrupt();
         }
@@ -152,19 +204,21 @@ public:
         auto resultType = dyn_cast<RankedTensorType>(result.getType());
         if (!resultType)
           return WalkResult::advance();
-        result.setType(withThreading(resultType,
-                                     std::max(*lhsThreading, *rhsThreading)));
+        result.setType(
+            withThreading(resultType, std::max(*lhsFirstRows, *rhsFirstRows)));
         return WalkResult::advance();
       };
 
       auto propagateElementwiseThreading = [&](Value lhs, Value rhs,
                                                Value result) -> WalkResult {
-        std::optional<int64_t> lhsThreading = getThreading(lhs.getType());
-        std::optional<int64_t> rhsThreading = getThreading(rhs.getType());
-        if (!lhsThreading || !rhsThreading)
+        std::optional<int64_t> lhsFirstRows = getThreadRows(lhs.getType());
+        std::optional<int64_t> rhsFirstRows = getThreadRows(rhs.getType());
+        if (!lhsFirstRows || !rhsFirstRows)
           return WalkResult::advance();
-        if (*lhsThreading != *rhsThreading) {
-          op->emitOpError("lhs and rhs threading must match");
+        std::optional<int64_t> lhsSecondRows = getSecondSliceRows(lhs.getType());
+        std::optional<int64_t> rhsSecondRows = getSecondSliceRows(rhs.getType());
+        if (*lhsFirstRows != *rhsFirstRows || lhsSecondRows != rhsSecondRows) {
+          op->emitOpError("lhs and rhs slice metadata must match");
           signalPassFailure();
           return WalkResult::interrupt();
         }
@@ -172,7 +226,7 @@ public:
         auto resultType = dyn_cast<RankedTensorType>(result.getType());
         if (!resultType)
           return WalkResult::advance();
-        result.setType(withThreading(resultType, *lhsThreading));
+        result.setType(withThreading(resultType, *lhsFirstRows));
         return WalkResult::advance();
       };
 

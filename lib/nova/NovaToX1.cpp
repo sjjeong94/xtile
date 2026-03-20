@@ -21,7 +21,7 @@ using namespace mlir;
 
 namespace {
 struct TensorLayout {
-  int64_t baseBank = 0;
+  SmallVector<int64_t> banks;
   int64_t space = 0;
   int64_t threadCount = 1;
   int64_t chunkRows = 0;
@@ -32,6 +32,12 @@ struct MemRefLayout {
   TensorLayout tensor;
   SmallVector<int64_t> start;
 };
+
+static void normalizeBanks(TensorLayout &layout) {
+  if (layout.threadCount <= 1) {
+    return;
+  }
+}
 
 static std::optional<int64_t> getEncodingI64(Type type, StringRef name) {
   auto tensorType = dyn_cast<RankedTensorType>(type);
@@ -46,6 +52,31 @@ static std::optional<int64_t> getEncodingI64(Type type, StringRef name) {
   if (!attr)
     return std::nullopt;
   return attr.getInt();
+}
+
+static std::optional<SmallVector<int64_t>> getEncodingI64Array(Type type,
+                                                               StringRef name) {
+  auto tensorType = dyn_cast<RankedTensorType>(type);
+  if (!tensorType)
+    return std::nullopt;
+
+  auto encoding = dyn_cast_or_null<DictionaryAttr>(tensorType.getEncoding());
+  if (!encoding)
+    return std::nullopt;
+
+  auto attr = dyn_cast_or_null<ArrayAttr>(encoding.get(name));
+  if (!attr)
+    return std::nullopt;
+
+  SmallVector<int64_t> values;
+  values.reserve(attr.size());
+  for (Attribute element : attr) {
+    auto intAttr = dyn_cast<IntegerAttr>(element);
+    if (!intAttr)
+      return std::nullopt;
+    values.push_back(intAttr.getInt());
+  }
+  return values;
 }
 
 static FailureOr<SmallVector<int64_t>>
@@ -66,19 +97,40 @@ static FailureOr<TensorLayout> getTensorLayoutFromType(Operation *op, Type type)
   }
 
   TensorLayout layout;
-  layout.baseBank = getEncodingI64(type, "bank").value_or(0);
   layout.space = getEncodingI64(type, "space").value_or(0);
   layout.shape.assign(tensorType.getShape().begin(), tensorType.getShape().end());
 
   int64_t fullRows = layout.shape.front();
-  int64_t threading = getEncodingI64(type, "threading").value_or(fullRows);
-  if (threading <= 0) {
-    op->emitOpError("requires positive threading when present");
+  if (std::optional<SmallVector<int64_t>> shape0 = getEncodingI64Array(type, "shape0")) {
+    if (shape0->empty()) {
+      op->emitOpError("requires non-empty shape0 encoding attribute");
+      return failure();
+    }
+    layout.chunkRows = (*shape0)[0];
+    layout.threadCount = getEncodingI64Array(type, "shape1") ? 2 : 1;
+  } else {
+    int64_t threading = getEncodingI64(type, "threading").value_or(fullRows);
+    if (threading <= 0) {
+      op->emitOpError("requires positive threading when present");
+      return failure();
+    }
+    layout.chunkRows = std::min(fullRows, threading);
+    layout.threadCount = std::max<int64_t>(1, llvm::divideCeil(fullRows, threading));
+  }
+  if (std::optional<int64_t> bank0 = getEncodingI64(type, "bank0")) {
+    layout.banks.push_back(*bank0);
+    if (std::optional<int64_t> bank1 = getEncodingI64(type, "bank1"))
+      layout.banks.push_back(*bank1);
+  } else {
+    op->emitOpError("requires bank0 encoding attribute");
     return failure();
   }
-
-  layout.chunkRows = std::min(fullRows, threading);
-  layout.threadCount = std::max<int64_t>(1, llvm::divideCeil(fullRows, threading));
+  if (layout.threadCount > 1 &&
+      layout.banks.size() != static_cast<size_t>(layout.threadCount)) {
+    op->emitOpError("requires one bank per x1 lane");
+    return failure();
+  }
+  normalizeBanks(layout);
   return layout;
 }
 
@@ -109,6 +161,7 @@ static FailureOr<TensorLayout> propagateLayout(Operation *op, Type resultType,
   if (!result->shape.empty())
     result->chunkRows =
         inputLayout.threadCount > 1 ? inputLayout.chunkRows : result->shape.front();
+  normalizeBanks(*result);
   return result;
 }
 
@@ -128,17 +181,19 @@ static FailureOr<TensorLayout> propagateBinaryLayout(Operation *op, Type resultT
 }
 
 static int64_t getFirstBank(const TensorLayout &layout) {
-  return layout.baseBank;
+  return layout.banks.front();
 }
 
 static int64_t getLastBank(const TensorLayout &layout) {
-  return layout.baseBank + layout.threadCount - 1;
+  return layout.banks.back();
 }
 
 static int64_t getLaneBank(const TensorLayout &layout, int64_t lane) {
-  if (layout.threadCount == 1)
-    return layout.baseBank;
-  return layout.baseBank + lane;
+  if (layout.banks.empty())
+    return 0;
+  if (layout.banks.size() == 1)
+    return layout.banks.front();
+  return layout.banks[std::min<int64_t>(lane, layout.banks.size() - 1)];
 }
 
 static int64_t getMatrixRowsPerLane(const TensorLayout &layout) {
@@ -175,7 +230,7 @@ static void createX1Load(OpBuilder &builder, Location loc, Value source,
                          const MemRefLayout &layout) {
   for (int64_t thread = 0; thread < layout.tensor.threadCount; ++thread) {
     builder.create<x1::LoadOp>(
-        loc, source, builder.getI64IntegerAttr(layout.tensor.baseBank + thread),
+        loc, source, builder.getI64IntegerAttr(getLaneBank(layout.tensor, thread)),
         builder.getI64IntegerAttr(layout.tensor.space),
         builder.getI64IntegerAttr(thread),
         getI64ArrayAttr(builder, getChunkStart(layout, thread)),
@@ -187,7 +242,7 @@ static void createX1Store(OpBuilder &builder, Location loc, Value dest,
                           const MemRefLayout &layout) {
   for (int64_t thread = 0; thread < layout.tensor.threadCount; ++thread) {
     builder.create<x1::StoreOp>(
-        loc, dest, builder.getI64IntegerAttr(layout.tensor.baseBank + thread),
+        loc, dest, builder.getI64IntegerAttr(getLaneBank(layout.tensor, thread)),
         builder.getI64IntegerAttr(layout.tensor.space),
         builder.getI64IntegerAttr(thread),
         getI64ArrayAttr(builder, getChunkStart(layout, thread)),

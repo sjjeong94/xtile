@@ -157,8 +157,8 @@ def compile(module: Any):
     module = xt_serialize(module)
     module = xt_to_nova(module)
     module = nova_optimize(module)
-    module = nova_allocate(module)
     module = nova_threading(module)
+    module = nova_allocate(module)
     module = nova_barrier(module)
     module = nova_to_x1(module)
     return module

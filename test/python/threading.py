@@ -21,8 +21,10 @@ def main():
         raise AssertionError("xt.nova_threading should return the original module object")
 
     module_asm = xt._module_asm(module)
-    if "threading = 3 : i64" not in module_asm:
-        raise AssertionError(f"expected threading annotation in IR:\n{module_asm}")
+    if "shape0 = [3, 8]" not in module_asm or "shape1 = [2, 8]" not in module_asm:
+        raise AssertionError(f"expected slice annotations in IR:\n{module_asm}")
+    if "threading =" in module_asm:
+        raise AssertionError(f"did not expect threading annotation in IR:\n{module_asm}")
 
     print(module_asm)
 
