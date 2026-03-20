@@ -38,4 +38,17 @@ def NovaThreading : Pass<"nova-threading", "::mlir::func::FuncOp"> {
   ];
 }
 
+def NovaBarrier : Pass<"nova-barrier", "::mlir::func::FuncOp"> {
+  let summary = "Insert nova.barrier ops around executable nova compute ops";
+  let description = [{
+    Inserts nova.barrier(mode = 0) after nova compute ops other than load,
+    store, free, and barrier, and inserts nova.barrier(mode = 1) before each
+    func.return. Existing matching barriers are preserved so the pass is
+    idempotent.
+  }];
+  let dependentDialects = [
+    "mlir::nova::NovaDialect"
+  ];
+}
+
 #endif // NOVA_PASS

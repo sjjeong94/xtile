@@ -50,6 +50,18 @@ if(TARGET xt)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/allocate.py
   )
   add_test(
+    NAME xt-python-threading
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/threading.py
+  )
+  add_test(
+    NAME xt-python-barrier
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/barrier.py
+  )
+  add_test(
+    NAME xt-python-compile
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/compile.py
+  )
+  add_test(
     NAME xt-python-dsl-convert
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/dsl_convert.py
   )
@@ -66,6 +78,18 @@ if(TARGET xt)
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
   set_tests_properties(xt-python-allocate PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+  set_tests_properties(xt-python-threading PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+  set_tests_properties(xt-python-barrier PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+  set_tests_properties(xt-python-compile PROPERTIES
     ENVIRONMENT "PYTHONPATH=${XT_BINARY_DIR}/python"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )

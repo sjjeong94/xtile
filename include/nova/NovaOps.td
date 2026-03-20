@@ -38,6 +38,12 @@ class Nova_VoidUnaryTensorOp<string mnemonic, string summaryText> :
   let assemblyFormat = "`(` $input `)` attr-dict `:` type($input)";
 }
 
+def Nova_BarrierOp : Nova_Op<"barrier"> {
+  let summary = "hardware tile barrier op";
+  let arguments = (ins I32Attr:$mode);
+  let assemblyFormat = "`(` `)` attr-dict";
+}
+
 def Nova_LoadOp : Nova_Op<"load"> {
   let summary = "load a tensor tile from a memref using constant start offsets";
   let arguments = (ins Nova_RankedMemRef:$source,

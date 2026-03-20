@@ -179,6 +179,22 @@ nb::object novaAllocate(nb::object moduleObject) {
                  });
 }
 
+nb::object novaThreading(nb::object moduleObject) {
+  return runPass(moduleObject, "xtile.nova_threading",
+                 [](mlir::PassManager &passManager) {
+                   passManager.nest<mlir::func::FuncOp>().addPass(
+                       mlir::nova::createNovaThreadingPass());
+                 });
+}
+
+nb::object novaBarrier(nb::object moduleObject) {
+  return runPass(moduleObject, "xtile.nova_barrier",
+                 [](mlir::PassManager &passManager) {
+                   passManager.nest<mlir::func::FuncOp>().addPass(
+                       mlir::nova::createNovaBarrierPass());
+                 });
+}
+
 } // namespace
 
 NB_MODULE(_xtile, m) {
@@ -192,6 +208,10 @@ NB_MODULE(_xtile, m) {
         "Run the nova-optimize pass on an mlir.ir.Module.");
   m.def("nova_allocate", &novaAllocate, nb::arg("module"),
         "Run the nova-allocate pass on an mlir.ir.Module.");
+  m.def("nova_threading", &novaThreading, nb::arg("module"),
+        "Run the nova-threading pass on an mlir.ir.Module.");
+  m.def("nova_barrier", &novaBarrier, nb::arg("module"),
+        "Run the nova-barrier pass on an mlir.ir.Module.");
   m.def("_parse_module", &parseModule, nb::arg("asm"));
   m.def("_module_asm",
         [](nb::object moduleObject) { return moduleToString(unwrapModule(moduleObject)); },

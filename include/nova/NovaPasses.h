@@ -8,6 +8,7 @@
 namespace mlir::nova {
 
 std::unique_ptr<Pass> createNovaAllocatePass();
+std::unique_ptr<Pass> createNovaBarrierPass();
 std::unique_ptr<Pass> createNovaOptimizePass();
 std::unique_ptr<Pass> createNovaThreadingPass();
 

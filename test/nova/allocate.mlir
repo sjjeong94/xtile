@@ -38,16 +38,16 @@ func.func @allocate_space_assignment(%lhs_src: memref<16x32xf32>, %rhs_src: memr
 // CHECK: %[[SQUARE1:.*]] = nova.square(%[[LOAD1]]) : tensor<16x16xf32, {bank = 0 : i64, space = 3 : i64}> -> tensor<16x16xf32, {bank = 2 : i64, space = 3 : i64}>
 // CHECK: %[[SCALAR:.*]] = arith.constant dense<1.000000e+00> : tensor<1x1xf32>
 // CHECK: nova.store(%[[SQUARE1]], %arg1) {start = array<i64: 1, 0>} : (tensor<16x16xf32, {bank = 2 : i64, space = 3 : i64}>, memref<64x16xf32>) -> ()
-// CHECK: nova.free(%[[SQUARE1]]) : tensor<16x16xf32, {bank = 2 : i64, space = 3 : i64}>
+// CHECK-NOT: nova.free(
 // CHECK-LABEL: func.func @allocate_multi_bank
 // CHECK: %[[LARGE:.*]] = nova.square(%arg0) : tensor<70000xf32> -> tensor<70000xf32, {bank = 0 : i64, space = 3 : i64}>
 // CHECK: %[[SMALL:.*]] = nova.square(%arg1) : tensor<16x16xf32> -> tensor<16x16xf32, {bank = 4 : i64, space = 3 : i64}>
 // CHECK: nova.store(%[[SMALL]], %arg2) {start = array<i64: 0, 0>} : (tensor<16x16xf32, {bank = 4 : i64, space = 3 : i64}>, memref<16x16xf32>) -> ()
-// CHECK: nova.free(%[[LARGE]]) : tensor<70000xf32, {bank = 0 : i64, space = 3 : i64}>
+// CHECK-NOT: nova.free(
 // CHECK-LABEL: func.func @allocate_space_assignment
 // CHECK: %[[LHS:.*]] = nova.load(%arg0) {start = array<i64: 0, 0>} : memref<16x32xf32> -> tensor<16x32xf32, {bank = 0 : i64, space = 3 : i64}>
 // CHECK: %[[RHS:.*]] = nova.load(%arg1) {start = array<i64: 0, 0>} : memref<32x8xf32> -> tensor<32x8xf32, {bank = 2 : i64, space = 3 : i64}>
 // CHECK: %[[SCALE:.*]] = nova.load(%arg2) {start = array<i64: 0, 0>} : memref<16x8xf32> -> tensor<16x8xf32, {space = 4 : i64}>
 // CHECK: %[[BIAS:.*]] = nova.load(%arg3) {start = array<i64: 0, 0>} : memref<16x8xf32> -> tensor<16x8xf32, {space = 5 : i64}>
 // CHECK: %[[RESULT:.*]] = nova.matmul(%[[LHS]], %[[RHS]], %[[SCALE]], %[[BIAS]]) : tensor<16x32xf32, {bank = 0 : i64, space = 3 : i64}>, tensor<32x8xf32, {bank = 2 : i64, space = 3 : i64}>, tensor<16x8xf32, {space = 4 : i64}>, tensor<16x8xf32, {space = 5 : i64}> -> tensor<16x8xf32, {bank = 4 : i64, space = 3 : i64}>
-// CHECK: nova.free(%[[RESULT]]) : tensor<16x8xf32, {bank = 4 : i64, space = 3 : i64}>
+// CHECK-NOT: nova.free(

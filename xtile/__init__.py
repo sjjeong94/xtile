@@ -52,7 +52,9 @@ def _load_native_module():
                 matches = sorted(candidate_dir.glob(pattern))
                 if not matches:
                     continue
-                spec = importlib.util.spec_from_file_location("xtile._xtile", matches[0])
+                spec = importlib.util.spec_from_file_location(
+                    "xtile._xtile", matches[0]
+                )
                 if spec is None or spec.loader is None:
                     continue
                 module = importlib.util.module_from_spec(spec)
@@ -70,7 +72,9 @@ def _wrap_module_asm(asm: str) -> tuple[str, str | None]:
     if stripped.startswith("module"):
         return stripped, None
 
-    indented = "\n".join(f"  {line}" if line else line for line in stripped.splitlines())
+    indented = "\n".join(
+        f"  {line}" if line else line for line in stripped.splitlines()
+    )
     wrapped = f"module {{\n{indented}\n}}"
     return wrapped, stripped
 
@@ -131,6 +135,28 @@ def nova_allocate(module: Any):
     return module if isinstance(module, Module) else result
 
 
+def nova_threading(module: Any):
+    result = _native.nova_threading(_normalize_module_object(module))
+    _clear_display_if_wrapped(module)
+    return module if isinstance(module, Module) else result
+
+
+def nova_barrier(module: Any):
+    result = _native.nova_barrier(_normalize_module_object(module))
+    _clear_display_if_wrapped(module)
+    return module if isinstance(module, Module) else result
+
+
+def compile(module: Any):
+    module = serialize(module)
+    module = to_nova(module)
+    module = nova_optimize(module)
+    module = nova_allocate(module)
+    module = nova_threading(module)
+    module = nova_barrier(module)
+    return module
+
+
 def convert(kernel_fn, *, args, grid, double_buffering=False):
     return _convert_impl(
         kernel_fn,
@@ -156,6 +182,7 @@ __all__ = [
     "astype",
     "bid",
     "conv2d",
+    "compile",
     "convert",
     "cos",
     "depthwise_conv2d",
@@ -168,7 +195,9 @@ __all__ = [
     "mma",
     "mul",
     "nova_allocate",
+    "nova_barrier",
     "nova_optimize",
+    "nova_threading",
     "parse",
     "reciprocal",
     "reshape",
