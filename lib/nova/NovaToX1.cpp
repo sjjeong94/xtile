@@ -258,22 +258,37 @@ static void createX1Reduce(OpBuilder &builder, nova::ReduceOp op,
       builder.getI64IntegerAttr(getLastBank(inputLayout)),
       builder.getI64IntegerAttr(getFirstBank(resultLayout)),
       builder.getI64IntegerAttr(getLastBank(resultLayout)),
-      builder.getI64IntegerAttr(getMatrixRowsPerLane(inputLayout)),
-      builder.getI64IntegerAttr(inputLayout.shape[1]), op.getModeAttr());
+      getI64ArrayAttr(builder,
+                      {getMatrixRowsPerLane(inputLayout), inputLayout.shape[1]}),
+      op.getModeAttr());
 }
 
 static void createX1Broadcast(OpBuilder &builder, nova::BroadcastOp op,
                               const TensorLayout &lhsLayout,
                               const TensorLayout &rhsLayout,
                               const TensorLayout &resultLayout) {
+  int32_t axis = -1;
+  if (rhsLayout.shape.size() == 2 && resultLayout.shape.size() == 2) {
+    if (rhsLayout.shape[0] != resultLayout.shape[0] &&
+        rhsLayout.shape[1] == resultLayout.shape[1]) {
+      axis = 0;
+    } else if (rhsLayout.shape[1] != resultLayout.shape[1] &&
+               rhsLayout.shape[0] == resultLayout.shape[0]) {
+      axis = 1;
+    }
+  }
+
   builder.create<x1::BroadcastOp>(
       op.getLoc(), builder.getI64IntegerAttr(getLaneBank(lhsLayout, 0)),
       builder.getI64IntegerAttr(getLaneBank(lhsLayout, resultLayout.threadCount - 1)),
       builder.getI64IntegerAttr(getLaneBank(rhsLayout, 0)),
       builder.getI64IntegerAttr(getLaneBank(rhsLayout, resultLayout.threadCount - 1)),
       builder.getI64IntegerAttr(getFirstBank(resultLayout)),
-      builder.getI64IntegerAttr(getLastBank(resultLayout)), op.getLhsAAttr(),
-      op.getLhsBAttr(), op.getModeAttr(), op.getRhsAAttr(), op.getRhsBAttr());
+      builder.getI64IntegerAttr(getLastBank(resultLayout)),
+      getI64ArrayAttr(builder,
+                      {getMatrixRowsPerLane(lhsLayout), resultLayout.shape[1]}),
+      builder.getI32IntegerAttr(axis), op.getLhsAAttr(),
+      op.getLhsBAttr(), op.getRhsAAttr(), op.getRhsBAttr(), op.getModeAttr());
 }
 
 template <typename X1Op, typename NovaOp>
@@ -286,7 +301,7 @@ static void createX1UnaryBankCommand(OpBuilder &builder, NovaOp op,
       builder.getI64IntegerAttr(getLastBank(inputLayout)),
       builder.getI64IntegerAttr(getFirstBank(resultLayout)),
       builder.getI64IntegerAttr(getLastBank(resultLayout)),
-      builder.getI64IntegerAttr(m), builder.getI64IntegerAttr(n));
+      getI64ArrayAttr(builder, {m, n}));
 }
 
 static LogicalResult createX1Matmul(OpBuilder &builder, nova::MatmulOp op,
@@ -322,8 +337,9 @@ static void createX1ScalarFma(OpBuilder &builder, nova::ScalarFmaOp op,
       builder.getI64IntegerAttr(getLastBank(inputLayout)),
       builder.getI64IntegerAttr(getFirstBank(resultLayout)),
       builder.getI64IntegerAttr(getLastBank(resultLayout)),
-      builder.getI64IntegerAttr(getMatrixRowsPerLane(inputLayout)),
-      builder.getI64IntegerAttr(inputLayout.shape[1]), op.getAAttr(),
+      getI64ArrayAttr(builder,
+                      {getMatrixRowsPerLane(inputLayout), inputLayout.shape[1]}),
+      op.getAAttr(),
       op.getBAttr());
 }
 
