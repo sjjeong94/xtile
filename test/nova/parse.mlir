@@ -21,8 +21,8 @@ func.func @parse_free(%arg0: tensor<16x16xf32>) {
 }
 
 func.func @parse_load_store(%arr: memref<128x16xf32>, %tile: tensor<16x16xf32>) -> tensor<16x16xf32> {
-  %0 = nova.load(%arr) {start = array<i64: 0, 2>, shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32>
-  nova.store(%tile, %arr) {start = array<i64: 1, 2>, shared = 1 : i64} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
+  %0 = nova.load(%arr) {start = [0, 2], shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32>
+  nova.store(%tile, %arr) {start = [1, 2], shared = 1 : i64} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
   func.return %0 : tensor<16x16xf32>
 }
 
@@ -50,8 +50,8 @@ func.func @parse_int_result_matmul(%arg0: tensor<16x32xi8>, %arg1: tensor<32x8xi
 // CHECK: nova.free(%arg0) : tensor<16x16xf32>
 // CHECK: return
 // CHECK-LABEL: func.func @parse_load_store
-// CHECK: %[[LOAD:.*]] = nova.load(%arg0) {shared = 1 : i64, start = array<i64: 0, 2>} : memref<128x16xf32> -> tensor<16x16xf32>
-// CHECK: nova.store(%arg1, %arg0) {shared = 1 : i64, start = array<i64: 1, 2>} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
+// CHECK: %[[LOAD:.*]] = nova.load(%arg0) {shared = 1 : i64, start = [0, 2]} : memref<128x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.store(%arg1, %arg0) {shared = 1 : i64, start = [1, 2]} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
 // CHECK: return %[[LOAD]] : tensor<16x16xf32>
 // CHECK-LABEL: func.func @parse_casts
 // CHECK: %[[ITOF:.*]] = nova.itof(%arg0) : tensor<5x16xi8> -> tensor<5x16xf32>

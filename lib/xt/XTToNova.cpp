@@ -75,9 +75,9 @@ static FailureOr<int64_t> extractConstantInt(Value value) {
   return failure();
 }
 
-static FailureOr<DenseI64ArrayAttr> extractConstantStarts(MLIRContext *context,
-                                                          ValueRange values,
-                                                          RankedTensorType type) {
+static FailureOr<ArrayAttr> extractConstantStarts(MLIRContext *context,
+                                                  ValueRange values,
+                                                  RankedTensorType type) {
   if (!type || !type.hasStaticShape())
     return failure();
 
@@ -85,15 +85,15 @@ static FailureOr<DenseI64ArrayAttr> extractConstantStarts(MLIRContext *context,
   if (shape.size() != values.size())
     return failure();
 
-  SmallVector<int64_t> starts;
+  SmallVector<Attribute> starts;
   starts.reserve(values.size());
   for (auto [value, dim] : llvm::zip(values, shape)) {
     FailureOr<int64_t> index = extractConstantInt(value);
     if (failed(index))
       return failure();
-    starts.push_back(*index * dim);
+    starts.push_back(IntegerAttr::get(IntegerType::get(context, 64), *index * dim));
   }
-  return DenseI64ArrayAttr::get(context, starts);
+  return ArrayAttr::get(context, starts);
 }
 
 template <typename OpTy>
@@ -264,7 +264,7 @@ struct LoadOpToNovaPattern : OpRewritePattern<xt::LoadOp> {
     if (!resultType)
       return failure();
 
-    FailureOr<DenseI64ArrayAttr> startAttr = extractConstantStarts(
+    FailureOr<ArrayAttr> startAttr = extractConstantStarts(
         rewriter.getContext(), op.getCoords(), resultType);
     if (failed(startAttr))
       return failure();
@@ -291,7 +291,7 @@ struct StoreOpToNovaPattern : OpRewritePattern<xt::StoreOp> {
     if (!valueType)
       return failure();
 
-    FailureOr<DenseI64ArrayAttr> startAttr = extractConstantStarts(
+    FailureOr<ArrayAttr> startAttr = extractConstantStarts(
         rewriter.getContext(), op.getCoords(), valueType);
     if (failed(startAttr))
       return failure();

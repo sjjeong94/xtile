@@ -80,13 +80,24 @@ static std::optional<SmallVector<int64_t>> getEncodingI64Array(Type type,
 }
 
 static FailureOr<SmallVector<int64_t>>
-toIntVector(Operation *op, DenseI64ArrayAttr attr, StringRef name) {
+toIntVector(Operation *op, ArrayAttr attr, StringRef name) {
   if (!attr) {
     op->emitOpError() << "requires " << name << " attribute";
     return failure();
   }
 
-  return SmallVector<int64_t>(attr.asArrayRef().begin(), attr.asArrayRef().end());
+  SmallVector<int64_t> values;
+  values.reserve(attr.size());
+  for (Attribute element : attr) {
+    auto intAttr = dyn_cast<IntegerAttr>(element);
+    if (!intAttr) {
+      op->emitOpError() << "requires " << name
+                        << " to contain only i64 integer attributes";
+      return failure();
+    }
+    values.push_back(intAttr.getInt());
+  }
+  return values;
 }
 
 static FailureOr<TensorLayout> getTensorLayoutFromType(Operation *op, Type type) {
@@ -135,7 +146,7 @@ static FailureOr<TensorLayout> getTensorLayoutFromType(Operation *op, Type type)
 }
 
 static FailureOr<MemRefLayout> getMemRefLayout(Operation *op, Type type,
-                                               DenseI64ArrayAttr startAttr) {
+                                               ArrayAttr startAttr) {
   FailureOr<TensorLayout> tensor = getTensorLayoutFromType(op, type);
   if (failed(tensor))
     return failure();

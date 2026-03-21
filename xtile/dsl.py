@@ -28,6 +28,10 @@ class Array:
         if not isinstance(self.dtype, DType):
             raise TypeError("dtype must be an xtile dtype")
 
+    @property
+    def ndim(self) -> int:
+        return len(self.shape)
+
 
 class KernelFunction:
     def __init__(self, fn: Callable[..., object]) -> None:
@@ -160,16 +164,29 @@ class TraceContext:
         kernel_args: list[KernelArg | ScalarArg] = []
         for i, (param, arg) in enumerate(zip(params, args)):
             if isinstance(arg, Array):
-                kernel_args.append(KernelArg(index=i, python_name=param.name, array=arg))
+                kernel_args.append(
+                    KernelArg(index=i, python_name=param.name, array=arg)
+                )
                 continue
             if isinstance(arg, int):
-                kernel_args.append(ScalarArg(index=i, python_name=param.name, value=arg))
+                kernel_args.append(
+                    ScalarArg(index=i, python_name=param.name, value=arg)
+                )
                 continue
             raise TypeError("convert args must be xt.Array values or integers")
         self.kernel_args = tuple(kernel_args)
-        self.array_args = tuple(arg for arg in self.kernel_args if isinstance(arg, KernelArg))
+        self.array_args = tuple(
+            arg for arg in self.kernel_args if isinstance(arg, KernelArg)
+        )
         self.operations: list[
-            LoadOp | StoreOp | ReduceOp | UnaryOp | BinaryOp | CastOp | TernaryOp | AttrOp
+            LoadOp
+            | StoreOp
+            | ReduceOp
+            | UnaryOp
+            | BinaryOp
+            | CastOp
+            | TernaryOp
+            | AttrOp
         ] = []
         self.used_block_ids = False
         self.load_counts = [0] * len(self.kernel_args)
@@ -179,8 +196,7 @@ class TraceContext:
 
     def trace_arguments(self) -> tuple[KernelArg | int, ...]:
         return tuple(
-            arg if isinstance(arg, KernelArg) else arg.value
-            for arg in self.kernel_args
+            arg if isinstance(arg, KernelArg) else arg.value for arg in self.kernel_args
         )
 
     def bid(self, dim: int) -> BlockId:
@@ -201,9 +217,13 @@ class TraceContext:
         self._validate_shape(shape)
         self._validate_shared(shared)
         if len(array.array.shape) != len(shape):
-            raise ValueError("xt.load requires shape rank to match the source array rank")
+            raise ValueError(
+                "xt.load requires shape rank to match the source array rank"
+            )
         if len(normalized_index) != len(shape):
-            raise ValueError("xt.load requires index rank to match the source array rank")
+            raise ValueError(
+                "xt.load requires index rank to match the source array rank"
+            )
         result = TensorValue(
             ssa_name=self._next_name("x"),
             shape=shape,
@@ -260,7 +280,9 @@ class TraceContext:
         if len(lhs.shape) != 2 or len(rhs.shape) != 2:
             raise ValueError("xt.matmul currently supports rank-2 tensors only")
         if lhs.shape[1] != rhs.shape[0]:
-            raise ValueError("xt.matmul requires lhs inner dimension to match rhs outer dimension")
+            raise ValueError(
+                "xt.matmul requires lhs inner dimension to match rhs outer dimension"
+            )
 
         if lhs.dtype == int8 and rhs.dtype == int8:
             result_dtype = float32
@@ -274,7 +296,9 @@ class TraceContext:
             shape=(lhs.shape[0], rhs.shape[1]),
             dtype=result_dtype,
         )
-        self.operations.append(BinaryOp(op_name="xt.matmul", result=result, lhs=lhs, rhs=rhs))
+        self.operations.append(
+            BinaryOp(op_name="xt.matmul", result=result, lhs=lhs, rhs=rhs)
+        )
         return result
 
     def astype(self, input_value: TensorValue, dtype: DType) -> TensorValue:
@@ -296,7 +320,9 @@ class TraceContext:
             shape=input_value.shape,
             dtype=dtype,
         )
-        self.operations.append(CastOp(op_name=op_name, result=result, input_value=input_value))
+        self.operations.append(
+            CastOp(op_name=op_name, result=result, input_value=input_value)
+        )
         return result
 
     def reshape(self, input_value: TensorValue, shape: tuple[int, ...]) -> TensorValue:
@@ -310,7 +336,9 @@ class TraceContext:
             shape=shape,
             dtype=input_value.dtype,
         )
-        self.operations.append(UnaryOp(op_name="xt.reshape", result=result, input_value=input_value))
+        self.operations.append(
+            UnaryOp(op_name="xt.reshape", result=result, input_value=input_value)
+        )
         return result
 
     def transpose(self, input_value: TensorValue) -> TensorValue:
@@ -338,9 +366,13 @@ class TraceContext:
         if acc.dtype != float32:
             raise TypeError("xt.mma currently requires a float32 accumulator")
         if lhs.shape[1] != rhs.shape[0]:
-            raise ValueError("xt.mma requires lhs inner dimension to match rhs outer dimension")
+            raise ValueError(
+                "xt.mma requires lhs inner dimension to match rhs outer dimension"
+            )
         if acc.shape != (lhs.shape[0], rhs.shape[1]):
-            raise ValueError("xt.mma accumulator shape must match the matmul result shape")
+            raise ValueError(
+                "xt.mma accumulator shape must match the matmul result shape"
+            )
 
         result = TensorValue(
             ssa_name=self._next_name("mma"),
@@ -401,9 +433,13 @@ class TraceContext:
         if not isinstance(tile, TensorValue):
             raise TypeError("xt.store expects a tensor value")
         if len(array.array.shape) != len(tile.shape):
-            raise ValueError("xt.store requires tile rank to match the destination array rank")
+            raise ValueError(
+                "xt.store requires tile rank to match the destination array rank"
+            )
         if len(normalized_index) != len(tile.shape):
-            raise ValueError("xt.store requires index rank to match the destination array rank")
+            raise ValueError(
+                "xt.store requires index rank to match the destination array rank"
+            )
         self.operations.append(StoreOp(array=array, index=normalized_index, tile=tile))
         self.store_counts[array.index] += 1
 
@@ -414,7 +450,9 @@ class TraceContext:
             for arg in self.array_args
         )
 
-        attributes = [f"xt.grid = array<i32: {', '.join(str(dim) for dim in self.grid)}>"]
+        attributes = [
+            f"xt.grid = array<i32: {', '.join(str(dim) for dim in self.grid)}>"
+        ]
         if self.double_buffering:
             attributes.append("xt.double_buffering = 1 : i32")
 
@@ -528,7 +566,9 @@ class TraceContext:
             shape=(input_value.shape[0], 1),
             dtype=input_value.dtype,
         )
-        self.operations.append(ReduceOp(op_name=op_name, result=result, input_value=input_value))
+        self.operations.append(
+            ReduceOp(op_name=op_name, result=result, input_value=input_value)
+        )
         return result
 
     def _unary(self, op_name: str, input_value: TensorValue, stem: str) -> TensorValue:
@@ -538,16 +578,22 @@ class TraceContext:
             shape=input_value.shape,
             dtype=input_value.dtype,
         )
-        self.operations.append(UnaryOp(op_name=op_name, result=result, input_value=input_value))
+        self.operations.append(
+            UnaryOp(op_name=op_name, result=result, input_value=input_value)
+        )
         return result
 
-    def _binary(self, op_name: str, lhs: TensorValue, rhs: TensorValue, stem: str) -> TensorValue:
+    def _binary(
+        self, op_name: str, lhs: TensorValue, rhs: TensorValue, stem: str
+    ) -> TensorValue:
         self._validate_tensor_value(lhs)
         self._validate_tensor_value(rhs)
         if lhs.dtype != rhs.dtype:
             raise TypeError("binary xtile ops require matching dtypes")
         if not self._is_broadcast_compatible(lhs.shape, rhs.shape):
-            raise ValueError("binary xtile ops require equal or rowwise-broadcast-compatible shapes")
+            raise ValueError(
+                "binary xtile ops require equal or rowwise-broadcast-compatible shapes"
+            )
 
         result_shape = lhs.shape
         result = TensorValue(
@@ -555,7 +601,9 @@ class TraceContext:
             shape=result_shape,
             dtype=lhs.dtype,
         )
-        self.operations.append(BinaryOp(op_name=op_name, result=result, lhs=lhs, rhs=rhs))
+        self.operations.append(
+            BinaryOp(op_name=op_name, result=result, lhs=lhs, rhs=rhs)
+        )
         return result
 
     def _normalize_index(
@@ -578,7 +626,9 @@ class TraceContext:
 
     def _constant_index(self, value: int) -> ConstantIndex:
         if value not in self.constant_names:
-            self.constant_names[value] = "%zero" if value == 0 else self._next_name(f"c{value}")
+            self.constant_names[value] = (
+                "%zero" if value == 0 else self._next_name(f"c{value}")
+            )
         return ConstantIndex(value=value)
 
     def _assign_mlir_arg_names(self) -> dict[int, str]:
@@ -592,10 +642,14 @@ class TraceContext:
             stores = self.store_counts[arg.index]
             if loads > 0 and stores == 0:
                 input_count += 1
-                names[arg.index] = "input" if input_count == 1 else f"input{input_count}"
+                names[arg.index] = (
+                    "input" if input_count == 1 else f"input{input_count}"
+                )
             elif stores > 0 and loads == 0:
                 output_count += 1
-                names[arg.index] = "output" if output_count == 1 else f"output{output_count}"
+                names[arg.index] = (
+                    "output" if output_count == 1 else f"output{output_count}"
+                )
             else:
                 names[arg.index] = arg.python_name
         return names
@@ -617,8 +671,10 @@ class TraceContext:
 
     @staticmethod
     def _validate_shape(shape: tuple[int, ...]) -> None:
-        if not isinstance(shape, tuple) or not shape or any(
-            not isinstance(dim, int) or dim <= 0 for dim in shape
+        if (
+            not isinstance(shape, tuple)
+            or not shape
+            or any(not isinstance(dim, int) or dim <= 0 for dim in shape)
         ):
             raise TypeError("shape must be a tuple of positive integers")
 
@@ -636,7 +692,9 @@ class TraceContext:
             raise ValueError("shared must be 0, 1, 2, or None")
 
     @staticmethod
-    def _format_index(index: tuple[BlockId | ConstantIndex, BlockId | ConstantIndex]) -> str:
+    def _format_index(
+        index: tuple[BlockId | ConstantIndex, BlockId | ConstantIndex],
+    ) -> str:
         parts = []
         for value in index:
             if isinstance(value, BlockId):
@@ -646,7 +704,9 @@ class TraceContext:
         return ", ".join(parts)
 
     @staticmethod
-    def _format_operand_type_list(prefix_types: tuple[str, ...], coord_count: int) -> str:
+    def _format_operand_type_list(
+        prefix_types: tuple[str, ...], coord_count: int
+    ) -> str:
         return ", ".join((*prefix_types, *(["i32"] * coord_count)))
 
     @staticmethod
@@ -702,10 +762,20 @@ class TraceContext:
             out_channels = filter_value.shape[3]
 
         out_h = self._compute_conv_output_dim(
-            input_value.shape[1], filter_value.shape[0], pad[0], pad[2], stride[0], dilation[0]
+            input_value.shape[1],
+            filter_value.shape[0],
+            pad[0],
+            pad[2],
+            stride[0],
+            dilation[0],
         )
         out_w = self._compute_conv_output_dim(
-            input_value.shape[2], filter_value.shape[1], pad[1], pad[3], stride[1], dilation[1]
+            input_value.shape[2],
+            filter_value.shape[1],
+            pad[1],
+            pad[3],
+            stride[1],
+            dilation[1],
         )
         result = TensorValue(
             ssa_name=self._next_name("conv" if not depthwise else "dwconv"),
@@ -724,7 +794,12 @@ class TraceContext:
 
     @staticmethod
     def _compute_conv_output_dim(
-        input_size: int, kernel_size: int, pad_before: int, pad_after: int, stride: int, dilation: int
+        input_size: int,
+        kernel_size: int,
+        pad_before: int,
+        pad_after: int,
+        stride: int,
+        dilation: int,
     ) -> int:
         effective_kernel = dilation * (kernel_size - 1) + 1
         numerator = input_size + pad_before + pad_after - effective_kernel
@@ -900,7 +975,9 @@ def depthwise_conv2d(
     dilation: tuple[int, int],
 ) -> TensorValue:
     if _ACTIVE_TRACE is None:
-        raise RuntimeError("xt.depthwise_conv2d may only be used while converting a kernel")
+        raise RuntimeError(
+            "xt.depthwise_conv2d may only be used while converting a kernel"
+        )
     return _ACTIVE_TRACE.depthwise_conv2d(
         input_value, filter_value, pad=pad, stride=stride, dilation=dilation
     )

@@ -3,6 +3,7 @@ from __future__ import annotations
 from importlib import import_module
 import importlib.util
 from pathlib import Path
+import os
 import sys
 from typing import Any
 
@@ -36,6 +37,10 @@ from .dsl import (
     tanh,
     transpose,
 )
+
+
+def cdiv(a: int, b: int) -> int:
+    return (a + b - 1) // b
 
 
 def _load_native_module():
@@ -172,6 +177,31 @@ def convert(kernel_fn, *, args, grid, double_buffering=False):
         double_buffering=double_buffering,
         parse_module=parse,
     )
+
+
+def save_ir(ir: object, save_path: str) -> None:
+    with open(save_path, "wt") as f:
+        f.write(str(ir))
+
+
+def save_compile_results(ir: object, save_dir: str) -> None:
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    ir = xt_serialize(ir)
+    save_ir(ir, os.path.join(save_dir, "1_xt_serialize.mlir"))
+    ir = xt_to_nova(ir)
+    save_ir(ir, os.path.join(save_dir, "2_xt_to_nova.mlir"))
+    ir = nova_optimize(ir)
+    save_ir(ir, os.path.join(save_dir, "3_nova_optimize.mlir"))
+    ir = nova_threading(ir)
+    save_ir(ir, os.path.join(save_dir, "4_nova_threading.mlir"))
+    ir = nova_allocate(ir)
+    save_ir(ir, os.path.join(save_dir, "5_nova_allocate.mlir"))
+    ir = nova_barrier(ir)
+    save_ir(ir, os.path.join(save_dir, "6_nova_barrier.mlir"))
+    ir = nova_to_x1(ir)
+    save_ir(ir, os.path.join(save_dir, "7_nova_to_x1.mlir"))
 
 
 def _module_asm(module: Any) -> str:

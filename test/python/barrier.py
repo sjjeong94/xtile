@@ -8,9 +8,9 @@ def main():
         """
         module {
           func.func @insert_barriers(%src: memref<16x16xf32>, %dst: memref<16x16xf32>) {
-            %0 = nova.load(%src) {start = array<i64: 0, 0>} : memref<16x16xf32> -> tensor<16x16xf32>
+            %0 = nova.load(%src) {start = [0, 0]} : memref<16x16xf32> -> tensor<16x16xf32>
             %1 = nova.square(%0) : tensor<16x16xf32> -> tensor<16x16xf32>
-            nova.store(%1, %dst) {start = array<i64: 0, 0>} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
+            nova.store(%1, %dst) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
             func.return
           }
         }

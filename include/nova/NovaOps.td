@@ -2,6 +2,7 @@
 #define NOVA_OPS
 
 include "nova/NovaDialect.td"
+include "mlir/IR/CommonAttrConstraints.td"
 include "mlir/IR/CommonTypeConstraints.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -47,7 +48,7 @@ def Nova_BarrierOp : Nova_Op<"barrier"> {
 def Nova_LoadOp : Nova_Op<"load"> {
   let summary = "load a tensor tile from a memref using constant start offsets";
   let arguments = (ins Nova_RankedMemRef:$source,
-                       DenseI64ArrayAttr:$start,
+                       I64ArrayAttr:$start,
                        OptionalAttr<I64Attr>:$shared);
   let results = (outs Nova_RankedTensor:$result);
   let hasVerifier = 1;
@@ -59,7 +60,7 @@ def Nova_StoreOp : Nova_Op<"store"> {
   let summary = "store a tensor tile to a memref using constant start offsets";
   let arguments = (ins Nova_RankedTensor:$value,
                        Nova_RankedMemRef:$dest,
-                       DenseI64ArrayAttr:$start,
+                       I64ArrayAttr:$start,
                        OptionalAttr<I64Attr>:$shared);
   let hasVerifier = 1;
   let assemblyFormat =

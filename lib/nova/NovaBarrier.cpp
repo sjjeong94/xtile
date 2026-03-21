@@ -23,10 +23,16 @@ static bool isSkippedComputeOp(Operation *op) {
   return isa<nova::LoadOp, nova::StoreOp, nova::FreeOp, nova::BarrierOp>(op);
 }
 
+static bool isDoubleBufferingDisabled(func::FuncOp func) {
+  auto attr = func->getAttrOfType<IntegerAttr>("xt.double_buffering");
+  return !attr || attr.getInt() == 0;
+}
+
 class NovaBarrierPass : public mlir::nova::impl::NovaBarrierBase<NovaBarrierPass> {
 public:
   void runOnOperation() override {
     func::FuncOp func = getOperation();
+    bool doubleBufferingDisabled = isDoubleBufferingDisabled(func);
 
     for (Block &block : func.getBody()) {
       SmallVector<Operation *> ops;
@@ -51,6 +57,22 @@ public:
         builder.setInsertionPointAfter(op);
         builder.create<nova::BarrierOp>(
             op->getLoc(), builder.getI32IntegerAttr(0));
+      }
+
+      if (doubleBufferingDisabled) {
+        for (Operation *op : ops) {
+          auto store = dyn_cast<nova::StoreOp>(op);
+          if (!store)
+            continue;
+
+          Operation *next = op->getNextNode();
+          if (isBarrierWithMode(next, 1))
+            continue;
+
+          builder.setInsertionPointAfter(op);
+          builder.create<nova::BarrierOp>(
+              store.getLoc(), builder.getI32IntegerAttr(1));
+        }
       }
 
       for (Operation &op : llvm::make_early_inc_range(block)) {
