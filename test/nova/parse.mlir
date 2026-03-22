@@ -15,6 +15,12 @@ func.func @parse_scalar_fma(%arg0: tensor<16x16xf32>) -> tensor<16x16xf32> {
   func.return %0 : tensor<16x16xf32>
 }
 
+func.func @parse_keep_alive(%arg0: tensor<16x16xf32>, %arg1: tensor<16x16xf32>, %arg2: tensor<16x16xf32>) {
+  nova.keep_alive(%arg0) : tensor<16x16xf32>
+  nova.keep_alive(%arg0, %arg1, %arg2) : tensor<16x16xf32>, tensor<16x16xf32>, tensor<16x16xf32>
+  func.return
+}
+
 func.func @parse_load_store(%arr: memref<128x16xf32>, %tile: tensor<16x16xf32>) -> tensor<16x16xf32> {
   %0 = nova.load(%arr) {start = [0, 2], shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32>
   nova.store(%tile, %arr) {start = [1, 2], shared = 1 : i64} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
@@ -41,6 +47,10 @@ func.func @parse_int_result_matmul(%arg0: tensor<16x32xi8>, %arg1: tensor<32x8xi
 // CHECK-LABEL: func.func @parse_scalar_fma
 // CHECK: %[[FMA:.*]] = nova.scalar_fma(%arg0) {a = 2.300000e+00 : f32, b = 3.500000e+00 : f32} : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK: return %[[FMA]] : tensor<16x16xf32>
+// CHECK-LABEL: func.func @parse_keep_alive
+// CHECK: nova.keep_alive(%arg0) : tensor<16x16xf32>
+// CHECK: nova.keep_alive(%arg0, %arg1, %arg2) : tensor<16x16xf32>, tensor<16x16xf32>, tensor<16x16xf32>
+// CHECK: return
 // CHECK-LABEL: func.func @parse_load_store
 // CHECK: %[[LOAD:.*]] = nova.load(%arg0) {shared = 1 : i64, start = [0, 2]} : memref<128x16xf32> -> tensor<16x16xf32>
 // CHECK: nova.store(%arg1, %arg0) {shared = 1 : i64, start = [1, 2]} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()

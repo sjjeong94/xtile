@@ -365,6 +365,13 @@ public:
 
     for (OpResult value : deletedAt[ops.size()])
       deallocateValue(value);
+
+    SmallVector<nova::KeepAliveOp> keepAliveOps;
+    func.walk([&](nova::KeepAliveOp keepAliveOp) {
+      keepAliveOps.push_back(keepAliveOp);
+    });
+    for (nova::KeepAliveOp keepAliveOp : keepAliveOps)
+      keepAliveOp.erase();
   }
 };
 } // namespace

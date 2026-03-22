@@ -38,6 +38,12 @@ def Nova_BarrierOp : Nova_Op<"barrier"> {
   let assemblyFormat = "`(` `)` attr-dict";
 }
 
+def Nova_KeepAliveOp : Nova_Op<"keep_alive"> {
+  let summary = "marker op that artificially extends tensor liveness";
+  let arguments = (ins Variadic<Nova_RankedTensor>:$inputs);
+  let assemblyFormat = "`(` $inputs `)` attr-dict `:` type($inputs)";
+}
+
 def Nova_LoadOp : Nova_Op<"load"> {
   let summary = "load a tensor tile from a memref using constant start offsets";
   let arguments = (ins Nova_RankedMemRef:$source,

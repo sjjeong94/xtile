@@ -11,6 +11,17 @@ func.func @allocate_basic(%src: memref<64x16xf32>, %dst: memref<64x16xf32>) {
   func.return
 }
 
+func.func @allocate_keep_alive_extends_liveness(%src: memref<64x16xf32>, %dst: memref<64x16xf32>) {
+  %0 = nova.load(%src) {start = [0, 0]} : memref<64x16xf32> -> tensor<16x16xf32>
+  %1 = nova.square(%0) : tensor<16x16xf32> -> tensor<16x16xf32>
+  nova.store(%1, %dst) {start = [0, 0]} : (tensor<16x16xf32>, memref<64x16xf32>) -> ()
+  %2 = nova.load(%src) {start = [1, 0]} : memref<64x16xf32> -> tensor<16x16xf32>
+  %3 = nova.square(%2) : tensor<16x16xf32> -> tensor<16x16xf32>
+  nova.store(%3, %dst) {start = [1, 0]} : (tensor<16x16xf32>, memref<64x16xf32>) -> ()
+  nova.keep_alive(%1, %3) : tensor<16x16xf32>, tensor<16x16xf32>
+  func.return
+}
+
 func.func @allocate_multi_bank(%a: tensor<70000xf32>, %b: tensor<16x16xf32>, %dst: memref<16x16xf32>) {
   %0 = nova.square(%a) : tensor<70000xf32> -> tensor<70000xf32>
   %1 = nova.square(%b) : tensor<16x16xf32> -> tensor<16x16xf32>
@@ -41,6 +52,14 @@ func.func @allocate_split_banks(%arg0: tensor<64x128xf32, {shape0 = [32, 128], s
 // CHECK: %[[SCALAR:.*]] = arith.constant dense<1.000000e+00> : tensor<1x1xf32>
 // CHECK: nova.store(%[[SQUARE1]], %arg1) {start = [1, 0]} : (tensor<16x16xf32, {bank0 = 1 : i64, space = 3 : i64}>, memref<64x16xf32>) -> ()
 // CHECK-NOT: nova.free(
+// CHECK-LABEL: func.func @allocate_keep_alive_extends_liveness
+// CHECK: %[[KL0:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<64x16xf32> -> tensor<16x16xf32, {bank0 = 0 : i64, space = 3 : i64}>
+// CHECK: %[[KS0:.*]] = nova.square(%[[KL0]]) : tensor<16x16xf32, {bank0 = 0 : i64, space = 3 : i64}> -> tensor<16x16xf32, {bank0 = 1 : i64, space = 3 : i64}>
+// CHECK: nova.store(%[[KS0]], %arg1) {start = [0, 0]} : (tensor<16x16xf32, {bank0 = 1 : i64, space = 3 : i64}>, memref<64x16xf32>) -> ()
+// CHECK: %[[KL1:.*]] = nova.load(%arg0) {start = [1, 0]} : memref<64x16xf32> -> tensor<16x16xf32, {bank0 = 0 : i64, space = 3 : i64}>
+// CHECK: %[[KS1:.*]] = nova.square(%[[KL1]]) : tensor<16x16xf32, {bank0 = 0 : i64, space = 3 : i64}> -> tensor<16x16xf32, {bank0 = 2 : i64, space = 3 : i64}>
+// CHECK: nova.store(%[[KS1]], %arg1) {start = [1, 0]} : (tensor<16x16xf32, {bank0 = 2 : i64, space = 3 : i64}>, memref<64x16xf32>) -> ()
+// CHECK-NOT: nova.keep_alive(
 // CHECK-LABEL: func.func @allocate_multi_bank
 // CHECK: %[[LARGE:.*]] = nova.square(%arg0) : tensor<70000xf32> -> tensor<70000xf32, {bank0 = 0 : i64, space = 3 : i64}>
 // CHECK: %[[SMALL:.*]] = nova.square(%arg1) : tensor<16x16xf32> -> tensor<16x16xf32, {bank0 = 0 : i64, space = 3 : i64}>

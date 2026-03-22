@@ -4,7 +4,9 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/SetVector.h"
 
 namespace mlir::nova {
 #define GEN_PASS_DEF_NOVABARRIER
@@ -19,8 +21,51 @@ static bool isBarrierWithMode(Operation *op, int32_t mode) {
   return barrier && static_cast<int32_t>(barrier.getMode()) == mode;
 }
 
+static Operation *getNextNonKeepAlive(Operation *op) {
+  for (Operation *next = op ? op->getNextNode() : nullptr; next;
+       next = next->getNextNode()) {
+    if (!isa<nova::KeepAliveOp>(next))
+      return next;
+  }
+  return nullptr;
+}
+
+static Operation *getPrevNonKeepAlive(Operation *op) {
+  for (Operation *prev = op ? op->getPrevNode() : nullptr; prev;
+       prev = prev->getPrevNode()) {
+    if (!isa<nova::KeepAliveOp>(prev))
+      return prev;
+  }
+  return nullptr;
+}
+
 static bool isSkippedComputeOp(Operation *op) {
-  return isa<nova::LoadOp, nova::StoreOp, nova::BarrierOp>(op);
+  return isa<nova::LoadOp, nova::StoreOp, nova::BarrierOp, nova::KeepAliveOp>(op);
+}
+
+static void collectTensorValues(Operation *op, llvm::SetVector<Value> &tensorSet) {
+  auto appendIfTensor = [&](Value value) {
+    if (isa<RankedTensorType>(value.getType()))
+      tensorSet.insert(value);
+  };
+
+  for (Value operand : op->getOperands())
+    appendIfTensor(operand);
+  for (Value result : op->getResults())
+    appendIfTensor(result);
+}
+
+static void insertKeepAliveAfterBarrier(nova::BarrierOp barrier,
+                                        const llvm::SetVector<Value> &tensorKeep) {
+  if (tensorKeep.empty())
+    return;
+  if (isa_and_nonnull<nova::KeepAliveOp>(barrier->getPrevNode()))
+    return;
+
+  SmallVector<Value> operands(tensorKeep.begin(), tensorKeep.end());
+  OpBuilder builder(barrier);
+  builder.setInsertionPoint(barrier);
+  builder.create<nova::KeepAliveOp>(barrier.getLoc(), TypeRange{}, operands);
 }
 
 static bool isDoubleBufferingDisabled(func::FuncOp func) {
@@ -50,7 +95,7 @@ public:
         if (isSkippedComputeOp(op))
           continue;
 
-        Operation *next = op->getNextNode();
+        Operation *next = getNextNonKeepAlive(op);
         if (isBarrierWithMode(next, 0))
           continue;
 
@@ -65,7 +110,7 @@ public:
           if (!store)
             continue;
 
-          Operation *next = op->getNextNode();
+          Operation *next = getNextNonKeepAlive(op);
           if (isBarrierWithMode(next, 1))
             continue;
 
@@ -80,13 +125,38 @@ public:
         if (!ret)
           continue;
 
-        Operation *prev = ret->getPrevNode();
+        Operation *prev = getPrevNonKeepAlive(ret);
         if (isBarrierWithMode(prev, 1))
           continue;
 
         builder.setInsertionPoint(ret);
         builder.create<nova::BarrierOp>(
             ret.getLoc(), builder.getI32IntegerAttr(1));
+      }
+
+      if (doubleBufferingDisabled)
+        continue;
+
+      llvm::SetVector<Value> tensorKeep;
+      llvm::SetVector<Value> tensorSet;
+      for (Operation &op : llvm::make_early_inc_range(block)) {
+        if (!isa<nova::LoadOp, nova::BarrierOp, nova::KeepAliveOp>(&op))
+          collectTensorValues(&op, tensorSet);
+
+        auto barrier = dyn_cast<nova::BarrierOp>(&op);
+        if (!barrier)
+          continue;
+
+        insertKeepAliveAfterBarrier(barrier, tensorKeep);
+        tensorKeep.clear();
+        if (static_cast<int32_t>(barrier.getMode()) == 0) {
+          tensorKeep = tensorSet;
+          tensorSet.clear();
+          continue;
+        }
+
+        tensorKeep.clear();
+        tensorSet.clear();
       }
     }
   }

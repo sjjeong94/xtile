@@ -163,8 +163,8 @@ def compile(module: Any):
     module = xt_to_nova(module)
     module = nova_optimize(module)
     module = nova_threading(module)
-    module = nova_allocate(module)
     module = nova_barrier(module)
+    module = nova_allocate(module)
     module = nova_to_x1(module)
     return module
 
@@ -197,10 +197,10 @@ def save_compile_results(ir: object, save_dir: str) -> None:
     save_ir(ir, os.path.join(save_dir, "3_nova_optimize.mlir"))
     ir = nova_threading(ir)
     save_ir(ir, os.path.join(save_dir, "4_nova_threading.mlir"))
-    ir = nova_allocate(ir)
-    save_ir(ir, os.path.join(save_dir, "5_nova_allocate.mlir"))
     ir = nova_barrier(ir)
-    save_ir(ir, os.path.join(save_dir, "6_nova_barrier.mlir"))
+    save_ir(ir, os.path.join(save_dir, "5_nova_barrier.mlir"))
+    ir = nova_allocate(ir)
+    save_ir(ir, os.path.join(save_dir, "6_nova_allocate.mlir"))
     ir = nova_to_x1(ir)
     save_ir(ir, os.path.join(save_dir, "7_nova_to_x1.mlir"))
     print("compiled kernel ->", save_dir)
