@@ -42,11 +42,6 @@ func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>} {
   func.return
 }
 
-func.func @free_op(%arg0: tensor<16x16xf32>) {
-  xt.free(%arg0) : tensor<16x16xf32>
-  func.return
-}
-
 func.func @cast_ops(%arg0: tensor<5x16xi8>, %arg1: tensor<5x16xf32>) {
   %0 = xt.itof(%arg0) : tensor<5x16xi8> -> tensor<5x16xf32>
   %1 = xt.ftoi(%arg1) : tensor<5x16xf32> -> tensor<5x16xi8>
@@ -77,8 +72,6 @@ func.func @cast_ops(%arg0: tensor<5x16xi8>, %arg1: tensor<5x16xf32>) {
 // CHECK: %[[TRANSPOSE:.*]] = xt.transpose(%[[RESHAPE0]]) : tensor<2x32x16xf32> -> tensor<2x16x32xf32>
 // CHECK: %[[RESHAPE1:.*]] = xt.reshape(%[[TRANSPOSE]]) : tensor<2x16x32xf32> -> tensor<64x16xf32>
 // CHECK-LABEL: func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>}
-// CHECK-LABEL: func.func @free_op
-// CHECK: xt.free(%arg0) : tensor<16x16xf32>
 // CHECK-LABEL: func.func @cast_ops
 // CHECK: %[[ITOF:.*]] = xt.itof(%arg0) : tensor<5x16xi8> -> tensor<5x16xf32>
 // CHECK: %[[FTOI:.*]] = xt.ftoi(%arg1) : tensor<5x16xf32> -> tensor<5x16xi8>

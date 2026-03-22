@@ -150,3 +150,12 @@ func.func @bad_ftoi_types(%arg0: tensor<5x16xi8>) {
 }
 
 // ERR: 'xt.ftoi' op requires floating-point input and integer result element types
+
+// -----
+
+func.func @removed_free_op(%arg0: tensor<16x16xf32>) {
+  xt.free(%arg0) : tensor<16x16xf32>
+  func.return
+}
+
+// ERR: custom op 'xt.free' is unknown

@@ -26,6 +26,7 @@ def softmax(inp: xt.Array, out: xt.Array) -> object:
         softmax_kernel,
         args=(inp, out, trow, col),
         grid=grid,
+        double_buffering=True,
     )
     return ir
 

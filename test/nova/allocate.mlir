@@ -8,7 +8,6 @@ func.func @allocate_basic(%src: memref<64x16xf32>, %dst: memref<64x16xf32>) {
   %3 = nova.square(%2) : tensor<16x16xf32> -> tensor<16x16xf32>
   %4 = arith.constant dense<1.0> : tensor<1x1xf32>
   nova.store(%3, %dst) {start = [1, 0]} : (tensor<16x16xf32>, memref<64x16xf32>) -> ()
-  nova.free(%3) : tensor<16x16xf32>
   func.return
 }
 
@@ -16,7 +15,6 @@ func.func @allocate_multi_bank(%a: tensor<70000xf32>, %b: tensor<16x16xf32>, %ds
   %0 = nova.square(%a) : tensor<70000xf32> -> tensor<70000xf32>
   %1 = nova.square(%b) : tensor<16x16xf32> -> tensor<16x16xf32>
   nova.store(%1, %dst) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
-  nova.free(%0) : tensor<70000xf32>
   func.return
 }
 
@@ -26,13 +24,11 @@ func.func @allocate_space_assignment(%lhs_src: memref<16x32xf32>, %rhs_src: memr
   %scale = nova.load(%scale_src) {start = [0, 0]} : memref<16x8xf32> -> tensor<16x8xf32>
   %bias = nova.load(%bias_src) {start = [0, 0]} : memref<16x8xf32> -> tensor<16x8xf32>
   %result = nova.matmul(%lhs, %rhs, %scale, %bias) : tensor<16x32xf32>, tensor<32x8xf32>, tensor<16x8xf32>, tensor<16x8xf32> -> tensor<16x8xf32>
-  nova.free(%result) : tensor<16x8xf32>
   func.return
 }
 
 func.func @allocate_split_banks(%arg0: tensor<64x128xf32, {shape0 = [32, 128], shape1 = [32, 128], start0 = [0, 0], start1 = [32, 0], threading = 32 : i64}>) {
   %0 = nova.square(%arg0) : tensor<64x128xf32, {shape0 = [32, 128], shape1 = [32, 128], start0 = [0, 0], start1 = [32, 0], threading = 32 : i64}> -> tensor<64x128xf32, {shape0 = [32, 128], shape1 = [32, 128], start0 = [0, 0], start1 = [32, 0], threading = 32 : i64}>
-  nova.free(%0) : tensor<64x128xf32, {shape0 = [32, 128], shape1 = [32, 128], start0 = [0, 0], start1 = [32, 0], threading = 32 : i64}>
   func.return
 }
 
@@ -47,8 +43,8 @@ func.func @allocate_split_banks(%arg0: tensor<64x128xf32, {shape0 = [32, 128], s
 // CHECK-NOT: nova.free(
 // CHECK-LABEL: func.func @allocate_multi_bank
 // CHECK: %[[LARGE:.*]] = nova.square(%arg0) : tensor<70000xf32> -> tensor<70000xf32, {bank0 = 0 : i64, space = 3 : i64}>
-// CHECK: %[[SMALL:.*]] = nova.square(%arg1) : tensor<16x16xf32> -> tensor<16x16xf32, {bank0 = 3 : i64, space = 3 : i64}>
-// CHECK: nova.store(%[[SMALL]], %arg2) {start = [0, 0]} : (tensor<16x16xf32, {bank0 = 3 : i64, space = 3 : i64}>, memref<16x16xf32>) -> ()
+// CHECK: %[[SMALL:.*]] = nova.square(%arg1) : tensor<16x16xf32> -> tensor<16x16xf32, {bank0 = 0 : i64, space = 3 : i64}>
+// CHECK: nova.store(%[[SMALL]], %arg2) {start = [0, 0]} : (tensor<16x16xf32, {bank0 = 0 : i64, space = 3 : i64}>, memref<16x16xf32>) -> ()
 // CHECK-NOT: nova.free(
 // CHECK-LABEL: func.func @allocate_space_assignment
 // CHECK: %[[LHS:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<16x32xf32> -> tensor<16x32xf32, {bank0 = 0 : i64, space = 3 : i64}>

@@ -5,7 +5,6 @@ func.func @insert_after_compute_and_before_return(%src: memref<16x16xf32>, %dst:
   %0 = nova.load(%src) {start = [0, 0]} : memref<16x16xf32> -> tensor<16x16xf32>
   %1 = nova.square(%0) : tensor<16x16xf32> -> tensor<16x16xf32>
   nova.store(%1, %dst) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
-  nova.free(%1) : tensor<16x16xf32>
   func.return
 }
 
@@ -21,14 +20,12 @@ func.func @skip_existing_barriers(%src: memref<16x16xf32>, %dst: memref<16x16xf3
 func.func @insert_after_store_when_double_buffering_disabled(%src: memref<16x16xf32>, %dst: memref<16x16xf32>) attributes {xt.double_buffering = 0 : i32} {
   %0 = nova.load(%src) {start = [0, 0]} : memref<16x16xf32> -> tensor<16x16xf32>
   nova.store(%0, %dst) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
-  nova.free(%0) : tensor<16x16xf32>
   func.return
 }
 
 func.func @insert_after_store_when_double_buffering_unspecified(%src: memref<16x16xf32>, %dst: memref<16x16xf32>) {
   %0 = nova.load(%src) {start = [0, 0]} : memref<16x16xf32> -> tensor<16x16xf32>
   nova.store(%0, %dst) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
-  nova.free(%0) : tensor<16x16xf32>
   func.return
 }
 
@@ -37,8 +34,6 @@ func.func @insert_after_store_when_double_buffering_unspecified(%src: memref<16x
 // CHECK: %[[SQUARE:.*]] = nova.square(%[[LOAD]]) : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-NEXT: nova.barrier() {mode = 0 : i32}
 // CHECK-NEXT: nova.store(%[[SQUARE]], %arg1) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
-// CHECK-NEXT: nova.barrier() {mode = 1 : i32}
-// CHECK-NEXT: nova.free(%[[SQUARE]]) : tensor<16x16xf32>
 // CHECK-NEXT: nova.barrier() {mode = 1 : i32}
 // CHECK-NEXT: return
 
@@ -54,15 +49,11 @@ func.func @insert_after_store_when_double_buffering_unspecified(%src: memref<16x
 // CHECK: %[[LOAD3:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<16x16xf32> -> tensor<16x16xf32>
 // CHECK-NEXT: nova.store(%[[LOAD3]], %arg1) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
 // CHECK-NEXT: nova.barrier() {mode = 1 : i32}
-// CHECK-NEXT: nova.free(%[[LOAD3]]) : tensor<16x16xf32>
-// CHECK-NEXT: nova.barrier() {mode = 1 : i32}
 // CHECK-NEXT: return
 
 // CHECK-LABEL: func.func @insert_after_store_when_double_buffering_unspecified
 // CHECK: %[[LOAD4:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<16x16xf32> -> tensor<16x16xf32>
 // CHECK-NEXT: nova.store(%[[LOAD4]], %arg1) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
-// CHECK-NEXT: nova.barrier() {mode = 1 : i32}
-// CHECK-NEXT: nova.free(%[[LOAD4]]) : tensor<16x16xf32>
 // CHECK-NEXT: nova.barrier() {mode = 1 : i32}
 // CHECK-NEXT: return
 
@@ -71,8 +62,6 @@ func.func @insert_after_store_when_double_buffering_unspecified(%src: memref<16x
 // IDEMPOTENT: %[[SQUARE5:.*]] = nova.square(%[[LOAD5]]) : tensor<16x16xf32> -> tensor<16x16xf32>
 // IDEMPOTENT-NEXT: nova.barrier() {mode = 0 : i32}
 // IDEMPOTENT-NEXT: nova.store(%[[SQUARE5]], %arg1) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
-// IDEMPOTENT-NEXT: nova.barrier() {mode = 1 : i32}
-// IDEMPOTENT-NEXT: nova.free(%[[SQUARE5]]) : tensor<16x16xf32>
 // IDEMPOTENT-NEXT: nova.barrier() {mode = 1 : i32}
 // IDEMPOTENT-NEXT: return
 
@@ -88,14 +77,10 @@ func.func @insert_after_store_when_double_buffering_unspecified(%src: memref<16x
 // IDEMPOTENT: %[[LOAD7:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<16x16xf32> -> tensor<16x16xf32>
 // IDEMPOTENT-NEXT: nova.store(%[[LOAD7]], %arg1) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
 // IDEMPOTENT-NEXT: nova.barrier() {mode = 1 : i32}
-// IDEMPOTENT-NEXT: nova.free(%[[LOAD7]]) : tensor<16x16xf32>
-// IDEMPOTENT-NEXT: nova.barrier() {mode = 1 : i32}
 // IDEMPOTENT-NEXT: return
 
 // IDEMPOTENT-LABEL: func.func @insert_after_store_when_double_buffering_unspecified
 // IDEMPOTENT: %[[LOAD8:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<16x16xf32> -> tensor<16x16xf32>
 // IDEMPOTENT-NEXT: nova.store(%[[LOAD8]], %arg1) {start = [0, 0]} : (tensor<16x16xf32>, memref<16x16xf32>) -> ()
-// IDEMPOTENT-NEXT: nova.barrier() {mode = 1 : i32}
-// IDEMPOTENT-NEXT: nova.free(%[[LOAD8]]) : tensor<16x16xf32>
 // IDEMPOTENT-NEXT: nova.barrier() {mode = 1 : i32}
 // IDEMPOTENT-NEXT: return

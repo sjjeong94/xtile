@@ -136,12 +136,9 @@ public:
         return WalkResult::advance();
       }
 
-      if (auto square = dyn_cast<nova::SquareOp>(op)) {
-        propagateThreading(square.getInput(), square.getResult());
-        return WalkResult::advance();
-      }
-      if (auto rsqrt = dyn_cast<nova::RsqrtOp>(op)) {
-        propagateThreading(rsqrt.getInput(), rsqrt.getResult());
+      if (isa<nova::SquareOp, nova::ExpOp, nova::ReciprocalOp,
+              nova::RsqrtOp>(op)) {
+        propagateThreading(op->getOperand(0), op->getResult(0));
         return WalkResult::advance();
       }
       if (auto itof = dyn_cast<nova::IToFOp>(op)) {

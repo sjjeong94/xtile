@@ -75,11 +75,6 @@ module {
     return
   }
 
-  func.func @free_op(%arg0: tensor<16x16xf32>) {
-    xt.free(%arg0) : tensor<16x16xf32>
-    return
-  }
-
   func.func @cast_ops(%a: tensor<5x16xi8>, %b: tensor<5x16xf32>) -> (tensor<5x16xf32>, tensor<5x16xi8>) {
     %0 = xt.itof(%a) : tensor<5x16xi8> -> tensor<5x16xf32>
     %1 = xt.ftoi(%b) : tensor<5x16xf32> -> tensor<5x16xi8>
@@ -118,8 +113,6 @@ module {
 // CHECK-LABEL: func.func @load_store_dynamic_index
 // CHECK: %[[DYNLOAD:.*]] = xt.load(%arg0, %arg2, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
 // CHECK: xt.store(%[[DYNLOAD]], %arg1, %arg2, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
-// CHECK-LABEL: func.func @free_op
-// CHECK: nova.free(%arg0) : tensor<16x16xf32>
 // CHECK-LABEL: func.func @cast_ops
 // CHECK: %[[ITOF:.*]] = nova.itof(%arg0) : tensor<5x16xi8> -> tensor<5x16xf32>
 // CHECK: %[[FTOI:.*]] = nova.ftoi(%arg1) : tensor<5x16xf32> -> tensor<5x16xi8>

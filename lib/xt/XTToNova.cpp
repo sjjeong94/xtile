@@ -307,21 +307,6 @@ struct StoreOpToNovaPattern : OpRewritePattern<xt::StoreOp> {
   }
 };
 
-struct FreeOpToNovaPattern : OpRewritePattern<xt::FreeOp> {
-  using OpRewritePattern<xt::FreeOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(xt::FreeOp op,
-                                PatternRewriter &rewriter) const override {
-    OperationState state(op.getLoc(), "nova.free");
-    state.addOperands(op.getInput());
-
-    Operation *novaOp = rewriter.create(state);
-    rewriter.eraseOp(op);
-    (void)novaOp;
-    return success();
-  }
-};
-
 template <>
 int32_t BinaryOpToNovaPattern<xt::AddOp>::getMode() {
   return 1;
@@ -388,7 +373,6 @@ public:
                  UnaryCastOpToNovaPattern<xt::FToIOp>,
                  ReduceOpToNovaPattern<xt::ReduceSumOp>,
                  ReduceOpToNovaPattern<xt::ReduceMaxOp>,
-                 FreeOpToNovaPattern,
                  StoreOpToNovaPattern>(&getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))

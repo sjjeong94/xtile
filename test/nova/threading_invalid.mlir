@@ -3,7 +3,6 @@
 func.func @broadcast_threading_one_sided(%src: memref<10x8xf32>, %rhs: tensor<3x8xf32>) {
   %0 = nova.load(%src) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32>
   %1 = nova.broadcast(%0, %rhs) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32>, tensor<3x8xf32> -> tensor<5x8xf32>
-  nova.free(%1) : tensor<5x8xf32>
   func.return
 }
 
@@ -13,7 +12,6 @@ func.func @elementwise_threading_mismatch(%src: memref<10x8xf32>) {
   %0 = nova.load(%src) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32>
   %1 = nova.load(%src) {start = [0, 0]} : memref<10x8xf32> -> tensor<3x8xf32>
   %2 = nova.elementwise(%0, %1) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32>, tensor<3x8xf32> -> tensor<5x8xf32>
-  nova.free(%2) : tensor<5x8xf32>
   func.return
 }
 

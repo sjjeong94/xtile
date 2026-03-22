@@ -365,11 +365,6 @@ public:
 
     for (OpResult value : deletedAt[ops.size()])
       deallocateValue(value);
-
-    SmallVector<nova::FreeOp> freesToErase;
-    func.walk([&](nova::FreeOp freeOp) { freesToErase.push_back(freeOp); });
-    for (nova::FreeOp freeOp : freesToErase)
-      freeOp.erase();
   }
 };
 } // namespace

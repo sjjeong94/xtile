@@ -20,7 +20,7 @@ static bool isBarrierWithMode(Operation *op, int32_t mode) {
 }
 
 static bool isSkippedComputeOp(Operation *op) {
-  return isa<nova::LoadOp, nova::StoreOp, nova::FreeOp, nova::BarrierOp>(op);
+  return isa<nova::LoadOp, nova::StoreOp, nova::BarrierOp>(op);
 }
 
 static bool isDoubleBufferingDisabled(func::FuncOp func) {

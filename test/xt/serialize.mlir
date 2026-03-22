@@ -102,7 +102,7 @@ func.func @serialize_double_buffer_store_value(%src: memref<128x16xf32>, %dst: m
 // CHECK: xt.store(%[[DBX0]], %arg1, %{{.*}}, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
 // CHECK: %[[DBX1:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
 // CHECK: xt.store(%[[DBX1]], %arg1, %{{.*}}, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
-// CHECK: xt.free(%[[DBX0]]) : tensor<16x16xf32>
+// CHECK-NOT: xt.free(
 
 // CHECK-LABEL: func.func @serialize_double_buffer_shared_x
 // CHECK: %[[DBS0:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) {shared = 1 : i64}
@@ -110,8 +110,8 @@ func.func @serialize_double_buffer_store_value(%src: memref<128x16xf32>, %dst: m
 // CHECK: xt.store(%[[DBS0]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: %[[DBS1:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) {shared = 1 : i64}
 // CHECK: xt.store(%[[DBS1]], %arg1, %{{.*}}, %{{.*}})
-// CHECK: xt.free(%[[DBS0]]) : tensor<16x16xf32>
 // CHECK: xt.store(%[[DBS1]], %arg1, %{{.*}}, %{{.*}})
+// CHECK-NOT: xt.free(
 
 // CHECK-LABEL: func.func @serialize_double_buffer_shared_xy
 // CHECK: %[[DBZ0:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) {shared = 2 : i64}
@@ -121,10 +121,10 @@ func.func @serialize_double_buffer_store_value(%src: memref<128x16xf32>, %dst: m
 // CHECK: xt.store(%[[DBZ0]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: %[[DBZ1:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) {shared = 2 : i64}
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
-// CHECK: xt.free(%[[DBZ0]]) : tensor<16x16xf32>
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
 // CHECK: xt.store(%[[DBZ1]], %arg1, %{{.*}}, %{{.*}})
+// CHECK-NOT: xt.free(
 
 // CHECK-LABEL: func.func @serialize_double_buffer_store_value
 // CHECK: %[[SVL0:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
@@ -133,4 +133,4 @@ func.func @serialize_double_buffer_store_value(%src: memref<128x16xf32>, %dst: m
 // CHECK: %[[SVL1:.*]] = xt.load(%arg0, %{{.*}}, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
 // CHECK: %[[SVE1:.*]] = xt.exp(%[[SVL1]]) : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK: xt.store(%[[SVE1]], %arg1, %{{.*}}, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
-// CHECK: xt.free(%[[SVE0]]) : tensor<16x16xf32>
+// CHECK-NOT: xt.free(

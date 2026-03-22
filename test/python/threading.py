@@ -9,7 +9,6 @@ def main():
         module {
           func.func @load_sets_threading(%src: memref<10x8xf32>) {
             %0 = nova.load(%src) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32>
-            nova.free(%0) : tensor<5x8xf32>
             func.return
           }
         }

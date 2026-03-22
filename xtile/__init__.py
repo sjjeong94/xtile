@@ -188,6 +188,7 @@ def save_compile_results(ir: object, save_dir: str) -> None:
 
     os.makedirs(save_dir, exist_ok=True)
 
+    save_ir(ir, os.path.join(save_dir, "0_xt.mlir"))
     ir = xt_serialize(ir)
     save_ir(ir, os.path.join(save_dir, "1_xt_serialize.mlir"))
     ir = xt_to_nova(ir)
@@ -202,6 +203,7 @@ def save_compile_results(ir: object, save_dir: str) -> None:
     save_ir(ir, os.path.join(save_dir, "6_nova_barrier.mlir"))
     ir = nova_to_x1(ir)
     save_ir(ir, os.path.join(save_dir, "7_nova_to_x1.mlir"))
+    print("compiled kernel ->", save_dir)
 
 
 def _module_asm(module: Any) -> str:

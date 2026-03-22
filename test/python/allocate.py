@@ -10,7 +10,6 @@ def main():
             %0 = nova.load(%src) {start = [0, 0]} : memref<64x16xf32> -> tensor<16x16xf32>
             %1 = nova.square(%0) : tensor<16x16xf32> -> tensor<16x16xf32>
             nova.store(%1, %dst) {start = [0, 0]} : (tensor<16x16xf32>, memref<64x16xf32>) -> ()
-            nova.free(%1) : tensor<16x16xf32>
             func.return
           }
         }
@@ -26,8 +25,6 @@ def main():
         raise AssertionError(f"expected allocated bank annotation in IR:\n{module_asm}")
     if "space = 3 : i64" not in module_asm:
         raise AssertionError(f"expected allocated space annotation in IR:\n{module_asm}")
-    if "nova.free(" in module_asm:
-        raise AssertionError(f"expected nova.free ops to be removed:\n{module_asm}")
 
     print(module_asm)
 
