@@ -136,16 +136,16 @@ def XT_DepthwiseConv2DOp : XT_Op<"depthwise_conv2d", [Pure]> {
 class XT_ReduceOp<string mnemonic, string summaryText> :
     XT_Op<mnemonic, [Pure]> {
   let summary = summaryText;
-  let arguments = (ins XT_RankedTensor:$input);
+  let arguments = (ins XT_RankedTensor:$input, I64Attr:$axis);
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
   let assemblyFormat =
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
-def XT_ReduceSumOp : XT_ReduceOp<"reduce_sum", "reduce the last dimension by sum">;
+def XT_ReduceSumOp : XT_ReduceOp<"reduce_sum", "reduce a tensor axis by sum">;
 
-def XT_ReduceMaxOp : XT_ReduceOp<"reduce_max", "reduce the last dimension by max">;
+def XT_ReduceMaxOp : XT_ReduceOp<"reduce_max", "reduce a tensor axis by max">;
 
 def XT_ReshapeOp : XT_Op<"reshape", [Pure]> {
   let summary = "reshape a tensor tile";

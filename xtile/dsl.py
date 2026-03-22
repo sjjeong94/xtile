@@ -101,6 +101,7 @@ class ReduceOp:
     op_name: str
     result: TensorValue
     input_value: TensorValue
+    axis: int
 
 
 @dataclass(frozen=True)
@@ -235,11 +236,11 @@ class TraceContext:
         self.load_counts[array.index] += 1
         return result
 
-    def reduce_max(self, input_value: TensorValue) -> TensorValue:
-        return self._reduce("xt.reduce_max", input_value, "row_max")
+    def reduce_max(self, input_value: TensorValue, axis: int = -1) -> TensorValue:
+        return self._reduce("xt.reduce_max", input_value, "row_max", axis)
 
-    def reduce_sum(self, input_value: TensorValue) -> TensorValue:
-        return self._reduce("xt.reduce_sum", input_value, "row_sum")
+    def reduce_sum(self, input_value: TensorValue, axis: int = -1) -> TensorValue:
+        return self._reduce("xt.reduce_sum", input_value, "row_sum", axis)
 
     def sub(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         return self._binary("xt.sub", lhs, rhs, "shifted")
@@ -492,7 +493,7 @@ class TraceContext:
             if isinstance(op, ReduceOp):
                 lines.append(
                     "  "
-                    f"{op.result.ssa_name} = {op.op_name}({op.input_value.ssa_name}) : "
+                    f"{op.result.ssa_name} = {op.op_name}({op.input_value.ssa_name}) {{axis = {op.axis} : i64}} : "
                     f"{self._format_tensor_type(op.input_value.shape, op.input_value.dtype)} -> "
                     f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
                 )
@@ -557,17 +558,27 @@ class TraceContext:
         lines.append("}")
         return "\n".join(lines)
 
-    def _reduce(self, op_name: str, input_value: TensorValue, stem: str) -> TensorValue:
+    def _reduce(
+        self, op_name: str, input_value: TensorValue, stem: str, axis: int
+    ) -> TensorValue:
         self._validate_tensor_value(input_value)
         if len(input_value.shape) != 2:
             raise ValueError("xt.max and xt.sum currently support rank-2 tensors only")
+        normalized_axis = self._normalize_reduce_axis(axis, len(input_value.shape))
+        result_shape = list(input_value.shape)
+        result_shape[normalized_axis] = 1
         result = TensorValue(
             ssa_name=self._next_name(stem),
-            shape=(input_value.shape[0], 1),
+            shape=tuple(result_shape),
             dtype=input_value.dtype,
         )
         self.operations.append(
-            ReduceOp(op_name=op_name, result=result, input_value=input_value)
+            ReduceOp(
+                op_name=op_name,
+                result=result,
+                input_value=input_value,
+                axis=normalized_axis,
+            )
         )
         return result
 
@@ -690,6 +701,14 @@ class TraceContext:
     def _validate_shared(shared: int | None) -> None:
         if shared is not None and shared not in (0, 1, 2):
             raise ValueError("shared must be 0, 1, 2, or None")
+
+    @staticmethod
+    def _normalize_reduce_axis(axis: int, rank: int) -> int:
+        if not isinstance(axis, int):
+            raise TypeError("axis must be an integer")
+        if axis < -rank or axis >= rank:
+            raise ValueError("axis must be in range [-rank, rank)")
+        return axis if axis >= 0 else axis + rank
 
     @staticmethod
     def _format_index(
@@ -843,16 +862,16 @@ def load(
     return _ACTIVE_TRACE.load(array, index, shape, shared)
 
 
-def max(input_value: TensorValue) -> TensorValue:
+def max(input_value: TensorValue, axis: int = -1) -> TensorValue:
     if _ACTIVE_TRACE is None:
         raise RuntimeError("xt.max may only be used while converting a kernel")
-    return _ACTIVE_TRACE.reduce_max(input_value)
+    return _ACTIVE_TRACE.reduce_max(input_value, axis=axis)
 
 
-def sum(input_value: TensorValue) -> TensorValue:
+def sum(input_value: TensorValue, axis: int = -1) -> TensorValue:
     if _ACTIVE_TRACE is None:
         raise RuntimeError("xt.sum may only be used while converting a kernel")
-    return _ACTIVE_TRACE.reduce_sum(input_value)
+    return _ACTIVE_TRACE.reduce_sum(input_value, axis=axis)
 
 
 def sub(lhs: TensorValue, rhs: TensorValue) -> TensorValue:

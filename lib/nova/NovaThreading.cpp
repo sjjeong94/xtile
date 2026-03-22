@@ -70,6 +70,10 @@ static std::optional<int64_t> getSecondSliceRows(Type type) {
   return (*shape1)[0];
 }
 
+static int64_t getReduceAxis(nova::ReduceOp op) {
+  return static_cast<int64_t>(op.getAxis());
+}
+
 static RankedTensorType withSliceMetadata(RankedTensorType type,
                                           std::optional<int64_t> firstRows) {
   MLIRContext *context = type.getContext();
@@ -158,7 +162,8 @@ public:
         return WalkResult::advance();
       }
       if (auto reduce = dyn_cast<nova::ReduceOp>(op)) {
-        propagateThreading(reduce.getInput(), reduce.getResult());
+        if (getReduceAxis(reduce) == 1)
+          propagateThreading(reduce.getInput(), reduce.getResult());
         return WalkResult::advance();
       }
         if (auto matmul = dyn_cast<nova::MatmulOp>(op)) {
@@ -192,17 +197,17 @@ public:
         std::optional<int64_t> rhsFirstRows = getThreadRows(rhs.getType());
         if (!lhsFirstRows && !rhsFirstRows)
           return WalkResult::advance();
-        if (!lhsFirstRows || !rhsFirstRows) {
-          op->emitOpError("lhs and rhs slice metadata must both be present");
-          signalPassFailure();
-          return WalkResult::interrupt();
-        }
 
         auto resultType = dyn_cast<RankedTensorType>(result.getType());
         if (!resultType)
           return WalkResult::advance();
-        result.setType(
-            withThreading(resultType, std::max(*lhsFirstRows, *rhsFirstRows)));
+        if (!lhsFirstRows)
+          result.setType(withThreading(resultType, *rhsFirstRows));
+        else if (!rhsFirstRows)
+          result.setType(withThreading(resultType, *lhsFirstRows));
+        else
+          result.setType(
+              withThreading(resultType, std::max(*lhsFirstRows, *rhsFirstRows)));
         return WalkResult::advance();
       };
 

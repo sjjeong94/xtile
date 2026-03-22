@@ -28,10 +28,10 @@ func.func @rowwise_softmax(%input: memref<128x64xf32>, %output: memref<128x64xf3
   %zero = arith.constant 0 : i32
 
   %x = xt.load(%input, %bid#0, %zero) : (memref<128x64xf32>, i32, i32) -> tensor<64x64xf32>
-  %row_max = xt.reduce_max(%x) : tensor<64x64xf32> -> tensor<64x1xf32>
+  %row_max = xt.reduce_max(%x) {axis = 1 : i64} : tensor<64x64xf32> -> tensor<64x1xf32>
   %shifted = xt.sub(%x, %row_max) : tensor<64x64xf32>, tensor<64x1xf32> -> tensor<64x64xf32>
   %exp = xt.exp(%shifted) : tensor<64x64xf32> -> tensor<64x64xf32>
-  %row_sum = xt.reduce_sum(%exp) : tensor<64x64xf32> -> tensor<64x1xf32>
+  %row_sum = xt.reduce_sum(%exp) {axis = 1 : i64} : tensor<64x64xf32> -> tensor<64x1xf32>
   %inv_sum = xt.reciprocal(%row_sum) : tensor<64x1xf32> -> tensor<64x1xf32>
   %normalized = xt.mul(%exp, %inv_sum) : tensor<64x64xf32>, tensor<64x1xf32> -> tensor<64x64xf32>
   xt.store(%normalized, %output, %bid#0, %zero) : (tensor<64x64xf32>, memref<128x64xf32>, i32, i32) -> ()
@@ -215,13 +215,38 @@ def check_missing_high_level_ops():
         if snippet not in compute_actual:
             raise AssertionError(f"expected {snippet!r} in compute MLIR:\n{compute_actual}")
 
-    return unary_actual, compute_actual
+    reduce_in = xt.Array(shape=(8, 8), dtype=xt.float32)
+    reduce_out = xt.Array(shape=(1, 8), dtype=xt.float32)
+
+    @xt.kernel
+    def column_reduce(x, y):
+        tile = xt.load(x, index=(0, 0), shape=(8, 8))
+        tile = xt.sum(tile, axis=0)
+        xt.store(y, index=(0, 0), tile=tile)
+
+    reduce_module = xt.convert(
+        column_reduce,
+        args=(reduce_in, reduce_out),
+        grid=(1, 1, 1),
+        double_buffering=False,
+    )
+    reduce_actual = str(reduce_module)
+    reduce_expected = (
+        "xt.reduce_sum(",
+        "{axis = 0 : i64}",
+        "tensor<1x8xf32>",
+    )
+    for snippet in reduce_expected:
+        if snippet not in reduce_actual:
+            raise AssertionError(f"expected {snippet!r} in axis-0 reduce MLIR:\n{reduce_actual}")
+
+    return unary_actual, compute_actual, reduce_actual
 
 
 def main():
     softmax = check_rowwise_softmax()
     matmul = check_matmul_pipeline()
-    unary_shape, compute = check_missing_high_level_ops()
+    unary_shape, compute, reduce_axis0 = check_missing_high_level_ops()
     print(softmax)
     print()
     print(matmul)
@@ -229,6 +254,8 @@ def main():
     print(unary_shape)
     print()
     print(compute)
+    print()
+    print(reduce_axis0)
 
 
 if __name__ == "__main__":

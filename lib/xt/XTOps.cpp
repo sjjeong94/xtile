@@ -347,7 +347,7 @@ LogicalResult DepthwiseConv2DOp::verify() {
 }
 
 static LogicalResult verifyLastDimReductionShape(Operation *op, Value input,
-                                                 Value result) {
+                                                 Value result, int64_t axis) {
   auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
   auto resultType = llvm::dyn_cast<RankedTensorType>(result.getType());
   if (!inputType || !resultType)
@@ -358,25 +358,47 @@ static LogicalResult verifyLastDimReductionShape(Operation *op, Value input,
     return op->emitOpError("requires operand and result element types to match");
   if (inputType.getRank() != resultType.getRank())
     return op->emitOpError("requires operand and result ranks to match");
-  if (inputType.getRank() < 1)
-    return op->emitOpError("requires rank-1 or higher tensors");
-  for (int64_t i = 0, e = inputType.getRank() - 1; i < e; ++i) {
-    if (inputType.getDimSize(i) != resultType.getDimSize(i))
+  if (inputType.getRank() != 2)
+    return op->emitOpError("reduce currently supports rank-2 tensors only");
+  int64_t rank = inputType.getRank();
+  if (axis < -rank || axis >= rank)
+    return op->emitOpError("axis must be in range [-rank, rank)");
+  int64_t normalizedAxis = axis >= 0 ? axis : axis + rank;
+  for (int64_t i = 0, e = inputType.getRank(); i < e; ++i) {
+    int64_t expectedDim = i == normalizedAxis ? 1 : inputType.getDimSize(i);
+    if (resultType.getDimSize(i) != expectedDim)
       return op->emitOpError(
-          "reduce result shape must match input shape except for the last dimension, which must be 1");
+          "reduce result shape must match input shape except for the reduced dimension, which must be 1");
   }
-  if (resultType.getDimSize(inputType.getRank() - 1) != 1)
-    return op->emitOpError(
-        "reduce result shape must match input shape except for the last dimension, which must be 1");
   return success();
 }
 
 LogicalResult ReduceSumOp::verify() {
-  return verifyLastDimReductionShape(*this, getInput(), getResult());
+  return verifyLastDimReductionShape(*this, getInput(), getResult(), getAxis());
 }
 
 LogicalResult ReduceMaxOp::verify() {
-  return verifyLastDimReductionShape(*this, getInput(), getResult());
+  return verifyLastDimReductionShape(*this, getInput(), getResult(), getAxis());
+}
+
+static LogicalResult verifyTransposeShape(Operation *op, Value input,
+                                          Value result) {
+  auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(result.getType());
+  if (!inputType || !resultType)
+    return op->emitOpError("requires ranked tensor operand and result");
+  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
+    return op->emitOpError("requires statically shaped tensors");
+  if (inputType.getElementType() != resultType.getElementType())
+    return op->emitOpError("requires operand and result element types to match");
+  if (inputType.getRank() != 3 || resultType.getRank() != 3)
+    return op->emitOpError("transpose requires rank-3 operand and result tensors");
+  if (inputType.getDimSize(0) != resultType.getDimSize(0) ||
+      inputType.getDimSize(1) != resultType.getDimSize(2) ||
+      inputType.getDimSize(2) != resultType.getDimSize(1))
+    return op->emitOpError(
+        "transpose result shape must preserve dim 0 and swap dims 1 and 2");
+  return success();
 }
 
 static int64_t getStaticElementCount(RankedTensorType type) {
@@ -402,22 +424,7 @@ LogicalResult ReshapeOp::verify() {
 }
 
 LogicalResult TransposeOp::verify() {
-  auto inputType = llvm::dyn_cast<RankedTensorType>(getInput().getType());
-  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
-  if (!inputType || !resultType)
-    return emitOpError("requires ranked tensor operand and result");
-  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
-    return emitOpError("requires statically shaped tensors");
-  if (inputType.getElementType() != resultType.getElementType())
-    return emitOpError("requires operand and result element types to match");
-  if (inputType.getRank() != 3 || resultType.getRank() != 3)
-    return emitOpError("transpose requires rank-3 operand and result tensors");
-  if (inputType.getDimSize(0) != resultType.getDimSize(0) ||
-      inputType.getDimSize(1) != resultType.getDimSize(2) ||
-      inputType.getDimSize(2) != resultType.getDimSize(1))
-    return emitOpError(
-        "transpose result shape must preserve dim 0 and swap dims 1 and 2");
-  return success();
+  return verifyTransposeShape(*this, getInput(), getResult());
 }
 
 static bool isZeroTensor(Value value) {

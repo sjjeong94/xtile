@@ -23,7 +23,7 @@ func.func @propagate_scalar_ops(%src: memref<10x8xf32>) {
 
 func.func @propagate_reduce_and_binary(%src: memref<10x8xf32>) {
   %0 = nova.load(%src) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32>
-  %1 = nova.reduce(%0) {mode = 0 : i32} : tensor<5x8xf32> -> tensor<5x1xf32>
+  %1 = nova.reduce(%0) {axis = 1 : i64, mode = 0 : i32} : tensor<5x8xf32> -> tensor<5x1xf32>
   %2 = nova.broadcast(%0, %1) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32>, tensor<5x1xf32> -> tensor<5x8xf32>
   %3 = nova.elementwise(%2, %0) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32>, tensor<5x8xf32> -> tensor<5x8xf32>
   func.return
@@ -33,6 +33,13 @@ func.func @broadcast_propagates_max_threading(%src: memref<10x8xf32>) {
   %0 = nova.load(%src) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32>
   %1 = nova.load(%src) {start = [0, 0]} : memref<10x8xf32> -> tensor<3x8xf32>
   %2 = nova.broadcast(%0, %1) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32>, tensor<3x8xf32> -> tensor<5x8xf32>
+  func.return
+}
+
+func.func @reduce_axis0_drops_reduce_threading_but_broadcast_recovers(%src: memref<10x8xf32>) {
+  %0 = nova.load(%src) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32>
+  %1 = nova.reduce(%0) {axis = 0 : i64, mode = 0 : i32} : tensor<5x8xf32> -> tensor<1x8xf32>
+  %2 = nova.broadcast(%0, %1) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32>, tensor<1x8xf32> -> tensor<5x8xf32>
   func.return
 }
 
@@ -72,7 +79,7 @@ func.func @load_sets_thread_slices(%src: memref<128x128xf32>) {
 // CHECK: return
 // CHECK-LABEL: func.func @propagate_reduce_and_binary
 // CHECK: %[[LOADR:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>
-// CHECK: %[[REDUCE:.*]] = nova.reduce(%[[LOADR]]) {mode = 0 : i32} : tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}> -> tensor<5x1xf32, {shape0 = [3, 1], shape1 = [2, 1], start0 = [0, 0], start1 = [3, 0]}>
+// CHECK: %[[REDUCE:.*]] = nova.reduce(%[[LOADR]]) {axis = 1 : i64, mode = 0 : i32} : tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}> -> tensor<5x1xf32, {shape0 = [3, 1], shape1 = [2, 1], start0 = [0, 0], start1 = [3, 0]}>
 // CHECK: %[[BCAST:.*]] = nova.broadcast(%[[LOADR]], %[[REDUCE]]) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>, tensor<5x1xf32, {shape0 = [3, 1], shape1 = [2, 1], start0 = [0, 0], start1 = [3, 0]}> -> tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>
 // CHECK: %[[EW:.*]] = nova.elementwise(%[[BCAST]], %[[LOADR]]) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>, tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}> -> tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>
 // CHECK: return
@@ -80,6 +87,11 @@ func.func @load_sets_thread_slices(%src: memref<128x128xf32>) {
 // CHECK: %[[LOADB0:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>
 // CHECK: %[[LOADB1:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<10x8xf32> -> tensor<3x8xf32, {shape0 = [2, 8], shape1 = [1, 8], start0 = [0, 0], start1 = [2, 0]}>
 // CHECK: %[[BMM:.*]] = nova.broadcast(%[[LOADB0]], %[[LOADB1]]) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>, tensor<3x8xf32, {shape0 = [2, 8], shape1 = [1, 8], start0 = [0, 0], start1 = [2, 0]}> -> tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>
+// CHECK: return
+// CHECK-LABEL: func.func @reduce_axis0_drops_reduce_threading_but_broadcast_recovers
+// CHECK: %[[LOADA0:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<10x8xf32> -> tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>
+// CHECK: %[[REDA0:.*]] = nova.reduce(%[[LOADA0]]) {axis = 0 : i64, mode = 0 : i32} : tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}> -> tensor<1x8xf32>
+// CHECK: %[[BCA0:.*]] = nova.broadcast(%[[LOADA0]], %[[REDA0]]) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 0 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>, tensor<1x8xf32> -> tensor<5x8xf32, {shape0 = [3, 8], shape1 = [2, 8], start0 = [0, 0], start1 = [3, 0]}>
 // CHECK: return
 // CHECK-LABEL: func.func @matmul_propagates_lhs_and_strips_rhs
 // CHECK: %[[LHS:.*]] = nova.load(%arg0) {start = [0, 0]} : memref<10x4xf32> -> tensor<5x4xf32, {shape0 = [3, 4], shape1 = [2, 4], start0 = [0, 0], start1 = [3, 0]}>

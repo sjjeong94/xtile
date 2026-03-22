@@ -176,6 +176,13 @@ static FailureOr<TensorLayout> propagateLayout(Operation *op, Type resultType,
   return result;
 }
 
+static FailureOr<TensorLayout> getReduceResultLayout(nova::ReduceOp op,
+                                                     const TensorLayout &inputLayout) {
+  if (static_cast<int64_t>(op.getAxis()) == 1)
+    return propagateLayout(op, op.getResult().getType(), inputLayout);
+  return getTensorLayoutFromType(op, op.getResult().getType());
+}
+
 static FailureOr<TensorLayout> propagateBinaryLayout(Operation *op, Type resultType,
                                                      const TensorLayout &lhs,
                                                      const TensorLayout &rhs) {
@@ -271,6 +278,7 @@ static void createX1Reduce(OpBuilder &builder, nova::ReduceOp op,
       builder.getI64IntegerAttr(getLastBank(resultLayout)),
       getI64ArrayAttr(builder,
                       {getMatrixRowsPerLane(inputLayout), inputLayout.shape[1]}),
+      builder.getI32IntegerAttr(static_cast<int32_t>(op.getAxis())),
       op.getModeAttr());
 }
 
@@ -399,7 +407,7 @@ public:
         }
 
         FailureOr<TensorLayout> resultLayout =
-            propagateLayout(reduce, reduce.getResult().getType(), inputIt->second);
+            getReduceResultLayout(reduce, inputIt->second);
         if (failed(resultLayout)) {
           signalPassFailure();
           return;

@@ -22,6 +22,10 @@ static IntegerAttr buildModeAttr(MLIRContext *context, int32_t mode) {
   return IntegerAttr::get(IntegerType::get(context, 32), mode);
 }
 
+static IntegerAttr buildAxisAttr(MLIRContext *context, int64_t axis) {
+  return IntegerAttr::get(IntegerType::get(context, 64), axis);
+}
+
 static FloatAttr buildFloatAttr(MLIRContext *context, float value) {
   return FloatAttr::get(Float32Type::get(context), value);
 }
@@ -170,6 +174,7 @@ struct ReduceOpToNovaPattern : OpRewritePattern<OpTy> {
     OperationState state(op.getLoc(), "nova.reduce");
     state.addOperands(op.getInput());
     state.addTypes(resultType);
+    state.addAttribute("axis", buildAxisAttr(rewriter.getContext(), getAxis(op)));
     state.addAttribute("mode", buildModeAttr(rewriter.getContext(), getMode()));
 
     Operation *novaOp = rewriter.create(state);
@@ -178,6 +183,7 @@ struct ReduceOpToNovaPattern : OpRewritePattern<OpTy> {
   }
 
   static int32_t getMode();
+  static int64_t getAxis(OpTy op) { return op.getAxis(); }
 };
 
 template <typename OpTy>

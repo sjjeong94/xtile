@@ -68,8 +68,9 @@ def X1_ReduceOp : X1_Op<"reduce"> {
                        I64Attr:$out0,
                        I64Attr:$out1,
                        I64ArrayAttr:$shape,
+                       I32Attr:$axis,
                        I32Attr:$mode);
-  let assemblyFormat = "` ` `{` `inp0` `=` $inp0 `,` `inp1` `=` $inp1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `,` `mode` `=` $mode `}` attr-dict";
+  let assemblyFormat = "` ` `{` `inp0` `=` $inp0 `,` `inp1` `=` $inp1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `,` `axis` `=` $axis `,` `mode` `=` $mode `}` attr-dict";
 }
 
 def X1_BroadcastOp : X1_Op<"broadcast"> {

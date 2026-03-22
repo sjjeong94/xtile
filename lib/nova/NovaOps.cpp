@@ -71,6 +71,29 @@ LogicalResult StoreOp::verify() {
   return success();
 }
 
+LogicalResult ReduceOp::verify() {
+  auto inputType = dyn_cast<RankedTensorType>(getInput().getType());
+  auto resultType = dyn_cast<RankedTensorType>(getResult().getType());
+  if (!inputType || !resultType)
+    return emitOpError("requires ranked tensor operand and result");
+  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
+    return emitOpError("requires statically shaped tensors");
+  if (inputType.getElementType() != resultType.getElementType())
+    return emitOpError("requires operand and result element types to match");
+  if (inputType.getRank() != 2 || resultType.getRank() != 2)
+    return emitOpError("requires rank-2 tensors");
+  int64_t axis = getAxis();
+  if (axis < 0 || axis >= inputType.getRank())
+    return emitOpError("axis must be 0 or 1");
+  for (int64_t i = 0; i < inputType.getRank(); ++i) {
+    int64_t expectedDim = i == axis ? 1 : inputType.getDimSize(i);
+    if (resultType.getDimSize(i) != expectedDim)
+      return emitOpError(
+          "reduce result shape must match input shape except for the reduced dimension, which must be 1");
+  }
+  return success();
+}
+
 LogicalResult IToFOp::verify() {
   return verifyTensorCastTypes(*this, getInput(), getResult(),
                                /*intToFloat=*/true);

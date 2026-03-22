@@ -132,8 +132,9 @@ def Nova_MatmulOp : Nova_Op<"matmul", [Pure]> {
 
 def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {
   let summary = "hardware tile reduction op";
-  let arguments = (ins Nova_RankedTensor:$input, I32Attr:$mode);
+  let arguments = (ins Nova_RankedTensor:$input, I64Attr:$axis, I32Attr:$mode);
   let results = (outs Nova_RankedTensor:$result);
+  let hasVerifier = 1;
   let assemblyFormat =
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }

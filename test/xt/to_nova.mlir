@@ -2,9 +2,14 @@
 
 module {
   func.func @reduce_ops(%a: tensor<16x16xf32>) -> (tensor<16x1xf32>, tensor<16x1xf32>) {
-    %0 = xt.reduce_sum(%a) : tensor<16x16xf32> -> tensor<16x1xf32>
-    %1 = xt.reduce_max(%a) : tensor<16x16xf32> -> tensor<16x1xf32>
+    %0 = xt.reduce_sum(%a) {axis = 1 : i64} : tensor<16x16xf32> -> tensor<16x1xf32>
+    %1 = xt.reduce_max(%a) {axis = 1 : i64} : tensor<16x16xf32> -> tensor<16x1xf32>
     return %0, %1 : tensor<16x1xf32>, tensor<16x1xf32>
+  }
+
+  func.func @reduce_axis0(%a: tensor<16x16xf32>) -> tensor<1x16xf32> {
+    %0 = xt.reduce_sum(%a) {axis = 0 : i64} : tensor<16x16xf32> -> tensor<1x16xf32>
+    return %0 : tensor<1x16xf32>
   }
 
   func.func @broadcast_sub(%a: tensor<16x16xf32>, %b: tensor<16x1xf32>) -> tensor<16x16xf32> {
@@ -83,8 +88,10 @@ module {
 }
 
 // CHECK-LABEL: func.func @reduce_ops
-// CHECK: nova.reduce(%arg0) {mode = 0 : i32} : tensor<16x16xf32> -> tensor<16x1xf32>
-// CHECK: nova.reduce(%arg0) {mode = 1 : i32} : tensor<16x16xf32> -> tensor<16x1xf32>
+// CHECK: nova.reduce(%arg0) {axis = 1 : i64, mode = 0 : i32} : tensor<16x16xf32> -> tensor<16x1xf32>
+// CHECK: nova.reduce(%arg0) {axis = 1 : i64, mode = 1 : i32} : tensor<16x16xf32> -> tensor<16x1xf32>
+// CHECK-LABEL: func.func @reduce_axis0
+// CHECK: nova.reduce(%arg0) {axis = 0 : i64, mode = 0 : i32} : tensor<16x16xf32> -> tensor<1x16xf32>
 // CHECK-LABEL: func.func @broadcast_sub
 // CHECK: nova.broadcast(%arg0, %arg1) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 3 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<16x16xf32>, tensor<16x1xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @elementwise_mul
