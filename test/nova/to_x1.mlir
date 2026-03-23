@@ -6,7 +6,7 @@ func.func @barrier_only() {
 }
 
 // CHECK-LABEL: func.func @barrier_only
-// CHECK: x1.barrier {mode = 1}
+// CHECK: x1.barrier 1
 // CHECK-NEXT: return
 
 func.func @rowwise_softmax(%arg0: memref<128x64xf32>,
@@ -44,39 +44,39 @@ func.func @rowwise_softmax(%arg0: memref<128x64xf32>,
 }
 
 // CHECK-LABEL: func.func @rowwise_softmax
-// CHECK-NEXT: x1.load %arg0 {bank = 0, space = 3, thread = 0, start = [0, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.load %arg0 {bank = 1, space = 3, thread = 1, start = [32, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.reduce {inp0 = 0, inp1 = 1, out0 = 2, out1 = 3, shape = [32, 64], axis = 1, mode = 1}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 0, lhs1 = 1, rhs0 = 2, rhs1 = 3, out0 = 4, out1 = 5, shape = [32, 64], axis = 1, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 3}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.exp {inp0 = 4, inp1 = 5, out0 = 2, out1 = 3, shape = [32, 64]}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.reduce {inp0 = 2, inp1 = 3, out0 = 4, out1 = 5, shape = [32, 64], axis = 1, mode = 0}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.reciprocal {inp0 = 4, inp1 = 5, out0 = 6, out1 = 7, shape = [64, 1]}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 2, lhs1 = 3, rhs0 = 6, rhs1 = 7, out0 = 4, out1 = 5, shape = [32, 64], axis = 1, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 2}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.store %arg1 {bank = 4, space = 3, thread = 0, start = [0, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.store %arg1 {bank = 5, space = 3, thread = 1, start = [32, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.load %arg0 {bank = 2, space = 3, thread = 0, start = [64, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.load %arg0 {bank = 3, space = 3, thread = 1, start = [96, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.reduce {inp0 = 2, inp1 = 3, out0 = 6, out1 = 7, shape = [32, 64], axis = 1, mode = 1}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 2, lhs1 = 3, rhs0 = 6, rhs1 = 7, out0 = 8, out1 = 9, shape = [32, 64], axis = 1, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 3}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.exp {inp0 = 8, inp1 = 9, out0 = 2, out1 = 3, shape = [32, 64]}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.reduce {inp0 = 2, inp1 = 3, out0 = 6, out1 = 7, shape = [32, 64], axis = 1, mode = 0}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.reciprocal {inp0 = 6, inp1 = 7, out0 = 8, out1 = 9, shape = [64, 1]}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 2, lhs1 = 3, rhs0 = 8, rhs1 = 9, out0 = 6, out1 = 7, shape = [32, 64], axis = 1, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 2}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.store %arg1 {bank = 6, space = 3, thread = 0, start = [64, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.store %arg1 {bank = 7, space = 3, thread = 1, start = [96, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.barrier {mode = 1}
+// CHECK-NEXT: x1.load %arg0 0 [0, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
+// CHECK-NEXT: x1.load %arg0 1 [32, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
+// CHECK-NEXT: x1.reduce 1 inp 0 1 out 2 3 [32, 64] axis 1
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 3 lhs 0 1 rhs 2 3 out 4 5 [32, 64] axis 1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.exp inp 4 5 out 2 3 [32, 64]
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.reduce 0 inp 2 3 out 4 5 [32, 64] axis 1
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.reciprocal inp 4 5 out 6 7 [64, 1]
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 2 lhs 2 3 rhs 6 7 out 4 5 [32, 64] axis 1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.store %arg1 4 [0, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
+// CHECK-NEXT: x1.store %arg1 5 [32, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
+// CHECK-NEXT: x1.load %arg0 2 [64, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
+// CHECK-NEXT: x1.load %arg0 3 [96, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
+// CHECK-NEXT: x1.reduce 1 inp 2 3 out 6 7 [32, 64] axis 1
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 3 lhs 2 3 rhs 6 7 out 8 9 [32, 64] axis 1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.exp inp 8 9 out 2 3 [32, 64]
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.reduce 0 inp 2 3 out 6 7 [32, 64] axis 1
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.reciprocal inp 6 7 out 8 9 [64, 1]
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 2 lhs 2 3 rhs 8 9 out 6 7 [32, 64] axis 1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.store %arg1 6 [64, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
+// CHECK-NEXT: x1.store %arg1 7 [96, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
+// CHECK-NEXT: x1.barrier 1
 // CHECK-NEXT: return
 
 func.func @rowwise_layernorm(%arg0: memref<128x64xf32>, %arg1: memref<1x64xf32>,
@@ -139,62 +139,62 @@ func.func @legacy_split_bank_inference(%arg0: memref<128x128xf32>) {
 }
 
 // CHECK-LABEL: func.func @rowwise_layernorm
-// CHECK-NEXT: x1.load %arg0 {bank = 0, space = 3, thread = 0, start = [0, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.load %arg0 {bank = 1, space = 3, thread = 1, start = [32, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.load %arg1 {bank = 2, space = 3, thread = 0, start = [0, 0], shape = [1, 64]} : memref<1x64xf32>
-// CHECK-NEXT: x1.load %arg2 {bank = 4, space = 3, thread = 0, start = [0, 0], shape = [1, 64]} : memref<1x64xf32>
-// CHECK-NEXT: x1.reduce {inp0 = 0, inp1 = 1, out0 = 6, out1 = 7, shape = [32, 64], axis = 1, mode = 0}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 0, lhs1 = 1, rhs0 = 6, rhs1 = 7, out0 = 8, out1 = 9, shape = [32, 64], axis = 1, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.562500e-02, rhs_b = 0.000000e+00, mode = 3}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.square {inp0 = 8, inp1 = 9, out0 = 6, out1 = 7, shape = [32, 64]}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.reduce {inp0 = 6, inp1 = 7, out0 = 10, out1 = 11, shape = [32, 64], axis = 1, mode = 0}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.scalar_fma {inp0 = 10, inp1 = 11, out0 = 6, out1 = 7, shape = [32, 1], a = 1.562500e-02, b = 9.99999974E-6}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.rsqrt {inp0 = 6, inp1 = 7, out0 = 10, out1 = 11, shape = [32, 1]}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 8, lhs1 = 9, rhs0 = 10, rhs1 = 11, out0 = 6, out1 = 7, shape = [32, 64], axis = 1, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 2}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 6, lhs1 = 7, rhs0 = 2, rhs1 = 2, out0 = 8, out1 = 9, shape = [32, 64], axis = 0, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 2}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 8, lhs1 = 9, rhs0 = 4, rhs1 = 4, out0 = 6, out1 = 7, shape = [32, 64], axis = 0, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 1}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.store %arg3 {bank = 6, space = 3, thread = 0, start = [0, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.store %arg3 {bank = 7, space = 3, thread = 1, start = [32, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.load %arg0 {bank = 8, space = 3, thread = 0, start = [64, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.load %arg0 {bank = 9, space = 3, thread = 1, start = [96, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.reduce {inp0 = 8, inp1 = 9, out0 = 10, out1 = 11, shape = [32, 64], axis = 1, mode = 0}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 8, lhs1 = 9, rhs0 = 10, rhs1 = 11, out0 = 12, out1 = 13, shape = [32, 64], axis = 1, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.562500e-02, rhs_b = 0.000000e+00, mode = 3}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.square {inp0 = 12, inp1 = 13, out0 = 8, out1 = 9, shape = [32, 64]}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.reduce {inp0 = 8, inp1 = 9, out0 = 10, out1 = 11, shape = [32, 64], axis = 1, mode = 0}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.scalar_fma {inp0 = 10, inp1 = 11, out0 = 8, out1 = 9, shape = [32, 1], a = 1.562500e-02, b = 9.99999974E-6}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.rsqrt {inp0 = 8, inp1 = 9, out0 = 10, out1 = 11, shape = [32, 1]}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 12, lhs1 = 13, rhs0 = 10, rhs1 = 11, out0 = 8, out1 = 9, shape = [32, 64], axis = 1, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 2}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 8, lhs1 = 9, rhs0 = 2, rhs1 = 2, out0 = 10, out1 = 11, shape = [32, 64], axis = 0, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 2}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.broadcast {lhs0 = 10, lhs1 = 11, rhs0 = 4, rhs1 = 4, out0 = 2, out1 = 3, shape = [32, 64], axis = 0, lhs_a = 1.000000e+00, lhs_b = 0.000000e+00, rhs_a = 1.000000e+00, rhs_b = 0.000000e+00, mode = 1}
-// CHECK-NEXT: x1.barrier {mode = 0}
-// CHECK-NEXT: x1.store %arg3 {bank = 2, space = 3, thread = 0, start = [64, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.store %arg3 {bank = 3, space = 3, thread = 1, start = [96, 0], shape = [32, 64]} : memref<128x64xf32>
-// CHECK-NEXT: x1.barrier {mode = 1}
+// CHECK-NEXT: x1.load %arg0 0 [0, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
+// CHECK-NEXT: x1.load %arg0 1 [32, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
+// CHECK-NEXT: x1.load %arg1 2 [0, 0] [1, 64] space 3 thread 0 : memref<1x64xf32>
+// CHECK-NEXT: x1.load %arg2 4 [0, 0] [1, 64] space 3 thread 0 : memref<1x64xf32>
+// CHECK-NEXT: x1.reduce 0 inp 0 1 out 6 7 [32, 64] axis 1
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 3 lhs 0 1 rhs 6 7 out 8 9 [32, 64] axis 1 lhs 1.000000e+00 0.000000e+00 rhs 1.562500e-02 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.square inp 8 9 out 6 7 [32, 64]
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.reduce 0 inp 6 7 out 10 11 [32, 64] axis 1
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.scalar_fma inp 10 11 out 6 7 [32, 1] {a = 1.562500e-02 : f32, b = 9.99999974E-6 : f32}
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.rsqrt inp 6 7 out 10 11 [32, 1]
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 2 lhs 8 9 rhs 10 11 out 6 7 [32, 64] axis 1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 2 lhs 6 7 rhs 2 2 out 8 9 [32, 64] axis 0 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 1 lhs 8 9 rhs 4 4 out 6 7 [32, 64] axis 0 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.store %arg3 6 [0, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
+// CHECK-NEXT: x1.store %arg3 7 [32, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
+// CHECK-NEXT: x1.load %arg0 8 [64, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
+// CHECK-NEXT: x1.load %arg0 9 [96, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
+// CHECK-NEXT: x1.reduce 0 inp 8 9 out 10 11 [32, 64] axis 1
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 3 lhs 8 9 rhs 10 11 out 12 13 [32, 64] axis 1 lhs 1.000000e+00 0.000000e+00 rhs 1.562500e-02 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.square inp 12 13 out 8 9 [32, 64]
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.reduce 0 inp 8 9 out 10 11 [32, 64] axis 1
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.scalar_fma inp 10 11 out 8 9 [32, 1] {a = 1.562500e-02 : f32, b = 9.99999974E-6 : f32}
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.rsqrt inp 8 9 out 10 11 [32, 1]
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 2 lhs 12 13 rhs 10 11 out 8 9 [32, 64] axis 1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 2 lhs 8 9 rhs 2 2 out 10 11 [32, 64] axis 0 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.broadcast 1 lhs 10 11 rhs 4 4 out 2 3 [32, 64] axis 0 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.barrier 0
+// CHECK-NEXT: x1.store %arg3 2 [64, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
+// CHECK-NEXT: x1.store %arg3 3 [96, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
+// CHECK-NEXT: x1.barrier 1
 // CHECK-NEXT: return
 
 // CHECK-LABEL: func.func @column_reduce
-// CHECK: x1.load %arg0 {bank = 0, space = 3, thread = 0, start = [0, 0], shape = [32, 64]} : memref<64x64xf32>
-// CHECK: x1.load %arg0 {bank = 1, space = 3, thread = 1, start = [32, 0], shape = [32, 64]} : memref<64x64xf32>
-// CHECK-NEXT: x1.reduce {inp0 = 0, inp1 = 1, out0 = 2, out1 = 2, shape = [32, 64], axis = 0, mode = 0}
+// CHECK: x1.load %arg0 0 [0, 0] [32, 64] space 3 thread 0 : memref<64x64xf32>
+// CHECK: x1.load %arg0 1 [32, 0] [32, 64] space 3 thread 1 : memref<64x64xf32>
+// CHECK-NEXT: x1.reduce 0 inp 0 1 out 2 2 [32, 64] axis 0
 // CHECK-NEXT: return
 
 // CHECK-LABEL: func.func @legacy_split_bank_inference
-// CHECK: x1.load %arg0 {bank = 0, space = 3, thread = 0, start = [0, 0], shape = [32, 128]} : memref<128x128xf32>
-// CHECK-NEXT: x1.load %arg0 {bank = 1, space = 3, thread = 1, start = [32, 0], shape = [32, 128]} : memref<128x128xf32>
+// CHECK: x1.load %arg0 0 [0, 0] [32, 128] space 3 thread 0 : memref<128x128xf32>
+// CHECK-NEXT: x1.load %arg0 1 [32, 0] [32, 128] space 3 thread 1 : memref<128x128xf32>
 // CHECK-NEXT: return

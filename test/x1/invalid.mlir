@@ -2,7 +2,7 @@
 
 module {
   func.func @invalid_load_bank(%src: memref<1024x1024xf32>) {
-    x1.load %src {bank = -1, space = 4, thread = 0, start = [0, 64], shape = [64, 64]} : memref<1024x1024xf32>
+    x1.load %src -1 [0, 64] [64, 64] space 4 thread 0 : memref<1024x1024xf32>
     func.return
   }
 }

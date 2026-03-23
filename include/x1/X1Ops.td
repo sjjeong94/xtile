@@ -14,7 +14,7 @@ class X1_Op<string mnemonic, list<Trait> traits = []> :
 def X1_BarrierOp : X1_Op<"barrier"> {
   let summary = "x1 barrier op";
   let arguments = (ins I32Attr:$mode);
-  let assemblyFormat = "` ` `{` `mode` `=` $mode `}` attr-dict";
+  let assemblyFormat = "$mode attr-dict";
 }
 
 class X1_MemRefCommandOp<string mnemonic, string summaryText> :
@@ -27,7 +27,7 @@ class X1_MemRefCommandOp<string mnemonic, string summaryText> :
                        DenseI64ArrayAttr:$start,
                        DenseI64ArrayAttr:$shape);
   let hasVerifier = 1;
-  let assemblyFormat = "$source ` ` `{` `bank` `=` $bank `,` `space` `=` $space `,` `thread` `=` $thread `,` `start` `=` $start `,` `shape` `=` $shape `}` attr-dict `:` type($source)";
+  let assemblyFormat = "$source $bank $start $shape `space` $space `thread` $thread attr-dict `:` type($source)";
 }
 
 def X1_LoadOp : X1_MemRefCommandOp<
@@ -47,7 +47,7 @@ def X1_MatmulOp : X1_Op<"matmul"> {
                        I64Attr:$m,
                        I64Attr:$n,
                        I64Attr:$k);
-  let assemblyFormat = "` ` `{` `lhs0` `=` $lhs0 `,` `lhs1` `=` $lhs1 `,` `rhs0` `=` $rhs0 `,` `rhs1` `=` $rhs1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `m` `=` $m `,` `n` `=` $n `,` `k` `=` $k `}` attr-dict";
+  let assemblyFormat = "`lhs` $lhs0 $lhs1 `rhs` $rhs0 $rhs1 `out` $out0 $out1 `mnk` $m $n $k attr-dict";
 }
 
 class X1_UnaryBankCommandOp<string mnemonic, string summaryText> :
@@ -58,7 +58,7 @@ class X1_UnaryBankCommandOp<string mnemonic, string summaryText> :
                        I64Attr:$out0,
                        I64Attr:$out1,
                        DenseI64ArrayAttr:$shape);
-  let assemblyFormat = "` ` `{` `inp0` `=` $inp0 `,` `inp1` `=` $inp1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `}` attr-dict";
+  let assemblyFormat = "`inp` $inp0 $inp1 `out` $out0 $out1 $shape attr-dict";
 }
 
 def X1_ReduceOp : X1_Op<"reduce"> {
@@ -70,7 +70,7 @@ def X1_ReduceOp : X1_Op<"reduce"> {
                        DenseI64ArrayAttr:$shape,
                        I32Attr:$axis,
                        I32Attr:$mode);
-  let assemblyFormat = "` ` `{` `inp0` `=` $inp0 `,` `inp1` `=` $inp1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `,` `axis` `=` $axis `,` `mode` `=` $mode `}` attr-dict";
+  let assemblyFormat = "$mode `inp` $inp0 $inp1 `out` $out0 $out1 $shape `axis` $axis attr-dict";
 }
 
 def X1_BroadcastOp : X1_Op<"broadcast"> {
@@ -88,7 +88,7 @@ def X1_BroadcastOp : X1_Op<"broadcast"> {
                        F32Attr:$rhs_a,
                        F32Attr:$rhs_b,
                        I32Attr:$mode);
-  let assemblyFormat = "` ` `{` `lhs0` `=` $lhs0 `,` `lhs1` `=` $lhs1 `,` `rhs0` `=` $rhs0 `,` `rhs1` `=` $rhs1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `,` `axis` `=` $axis `,` `lhs_a` `=` $lhs_a `,` `lhs_b` `=` $lhs_b `,` `rhs_a` `=` $rhs_a `,` `rhs_b` `=` $rhs_b `,` `mode` `=` $mode `}` attr-dict";
+  let assemblyFormat = "$mode `lhs` $lhs0 $lhs1 `rhs` $rhs0 $rhs1 `out` $out0 $out1 $shape `axis` $axis `lhs` $lhs_a $lhs_b `rhs` $rhs_a $rhs_b attr-dict";
 }
 
 def X1_ExpOp : X1_UnaryBankCommandOp<
@@ -106,7 +106,7 @@ def X1_ScalarFmaOp : X1_Op<"scalar_fma"> {
                        DenseI64ArrayAttr:$shape,
                        F32Attr:$a,
                        F32Attr:$b);
-  let assemblyFormat = "` ` `{` `inp0` `=` $inp0 `,` `inp1` `=` $inp1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `,` `a` `=` $a `,` `b` `=` $b `}` attr-dict";
+  let assemblyFormat = "`inp` $inp0 $inp1 `out` $out0 $out1 $shape attr-dict";
 }
 
 def X1_RsqrtOp : X1_UnaryBankCommandOp<

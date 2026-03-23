@@ -2,7 +2,7 @@
 
 module {
   func.func @invalid_store_space(%dst: memref<1024x1024xf32>) {
-    x1.store %dst {bank = 3, space = -1, thread = 0, start = [128, 64], shape = [64, 64]} : memref<1024x1024xf32>
+    x1.store %dst 3 [128, 64] [64, 64] space -1 thread 0 : memref<1024x1024xf32>
     func.return
   }
 }
