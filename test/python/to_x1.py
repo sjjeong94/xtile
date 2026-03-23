@@ -8,7 +8,7 @@ def main():
         """
         module {
           func.func @barrier_only() {
-            nova.barrier() {mode = 1 : i32}
+            nova.barrier 1
             func.return
           }
         }
@@ -20,9 +20,9 @@ def main():
         raise AssertionError("xt.nova_to_x1 should return the original module object")
 
     module_asm = xt._module_asm(module)
-    if "x1.barrier() {mode = 1 : i32}" not in module_asm:
+    if "x1.barrier {mode = 1}" not in module_asm:
         raise AssertionError(f"expected x1.barrier in lowered IR:\n{module_asm}")
-    if "nova.barrier()" in module_asm:
+    if "nova.barrier " in module_asm:
         raise AssertionError(f"expected nova.barrier to be rewritten away:\n{module_asm}")
 
     print(module_asm)

@@ -19,7 +19,7 @@ class Nova_UnaryTensorOp<string mnemonic, string summaryText> :
   let arguments = (ins Nova_RankedTensor:$input);
   let results = (outs Nova_RankedTensor:$result);
   let assemblyFormat =
-      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+      "$input attr-dict `:` type($input) `->` type($result)";
 }
 
 class Nova_UnaryCastOp<string mnemonic, string summaryText> :
@@ -29,41 +29,41 @@ class Nova_UnaryCastOp<string mnemonic, string summaryText> :
   let results = (outs Nova_RankedTensor:$result);
   let hasVerifier = 1;
   let assemblyFormat =
-      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+      "$input attr-dict `:` type($input) `->` type($result)";
 }
 
 def Nova_BarrierOp : Nova_Op<"barrier"> {
   let summary = "hardware tile barrier op";
   let arguments = (ins I32Attr:$mode);
-  let assemblyFormat = "`(` `)` attr-dict";
+  let assemblyFormat = "$mode attr-dict";
 }
 
 def Nova_KeepAliveOp : Nova_Op<"keep_alive"> {
   let summary = "marker op that artificially extends tensor liveness";
   let arguments = (ins Variadic<Nova_RankedTensor>:$inputs);
-  let assemblyFormat = "`(` $inputs `)` attr-dict `:` type($inputs)";
+  let assemblyFormat = "$inputs attr-dict `:` type($inputs)";
 }
 
 def Nova_LoadOp : Nova_Op<"load"> {
   let summary = "load a tensor tile from a memref using constant start offsets";
   let arguments = (ins Nova_RankedMemRef:$source,
-                       I64ArrayAttr:$start,
+                       DenseI64ArrayAttr:$start,
                        OptionalAttr<I64Attr>:$shared);
   let results = (outs Nova_RankedTensor:$result);
   let hasVerifier = 1;
   let assemblyFormat =
-      "`(` $source `)` attr-dict `:` type($source) `->` type($result)";
+      "$source $start attr-dict `:` type($source) `->` type($result)";
 }
 
 def Nova_StoreOp : Nova_Op<"store"> {
   let summary = "store a tensor tile to a memref using constant start offsets";
   let arguments = (ins Nova_RankedTensor:$value,
                        Nova_RankedMemRef:$dest,
-                       I64ArrayAttr:$start,
+                       DenseI64ArrayAttr:$start,
                        OptionalAttr<I64Attr>:$shared);
   let hasVerifier = 1;
   let assemblyFormat =
-      "`(` $value `,` $dest `)` attr-dict `:` functional-type(operands, results)";
+      "$value `,` $dest $start attr-dict `:` functional-type(operands, results)";
 }
 
 class Nova_BinaryTensorOp<string mnemonic, string summaryText> :
@@ -78,7 +78,7 @@ class Nova_BinaryTensorOp<string mnemonic, string summaryText> :
                        F32Attr:$rhs_b);
   let results = (outs Nova_RankedTensor:$result);
   let assemblyFormat =
-      "`(` $lhs `,` $rhs `)` attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
+      "$mode $lhs `,` $rhs  attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
 }
 
 def Nova_ElementwiseOp : Nova_BinaryTensorOp<
@@ -92,7 +92,7 @@ def Nova_ScalarOp : Nova_Op<"scalar", [Pure]> {
   let arguments = (ins Nova_RankedTensor:$input, I32Attr:$mode, F32Attr:$rhs);
   let results = (outs Nova_RankedTensor:$result);
   let assemblyFormat =
-      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+      "$mode $input `,` $rhs attr-dict `:` type($input) `->` type($result)";
 }
 
 def Nova_ScalarFmaOp : Nova_Op<"scalar_fma", [Pure]> {
@@ -100,7 +100,7 @@ def Nova_ScalarFmaOp : Nova_Op<"scalar_fma", [Pure]> {
   let arguments = (ins Nova_RankedTensor:$input, F32Attr:$a, F32Attr:$b);
   let results = (outs Nova_RankedTensor:$result);
   let assemblyFormat =
-      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+      "$input `,` $a `,` $b attr-dict `:` type($input) `->` type($result)";
 }
 
 def Nova_SquareOp : Nova_UnaryTensorOp<
@@ -127,7 +127,7 @@ def Nova_MatmulOp : Nova_Op<"matmul", [Pure]> {
                        Nova_RankedTensor:$scale, Nova_RankedTensor:$bias);
   let results = (outs Nova_RankedTensor:$result);
   let assemblyFormat =
-      "`(` $lhs `,` $rhs `,` $scale `,` $bias `)` attr-dict `:` type($lhs) `,` type($rhs) `,` type($scale) `,` type($bias) `->` type($result)";
+      "$lhs `,` $rhs `,` $scale `,` $bias attr-dict `:` type($lhs) `,` type($rhs) `,` type($scale) `,` type($bias) `->` type($result)";
 }
 
 def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {
@@ -136,7 +136,17 @@ def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {
   let results = (outs Nova_RankedTensor:$result);
   let hasVerifier = 1;
   let assemblyFormat =
-      "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
+      "$mode $input attr-dict `:` type($input) `->` type($result)";
+}
+
+def Nova_PermuteOp : Nova_Op<"permute", [Pure]> {
+  let summary = "hardware tile tensor dimension permutation op";
+  let arguments = (ins Nova_RankedTensor:$input,
+                       DenseI64ArrayAttr:$permutation);
+  let results = (outs Nova_RankedTensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "$input $permutation attr-dict `:` type($input) `->` type($result)";
 }
 
 #endif // NOVA_OPS

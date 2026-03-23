@@ -85,42 +85,50 @@ module {
     %1 = xt.ftoi(%b) : tensor<5x16xf32> -> tensor<5x16xi8>
     return %0, %1 : tensor<5x16xf32>, tensor<5x16xi8>
   }
+
+  func.func @permute(%a: tensor<2x3x5xf32>) -> tensor<5x2x3xf32> {
+    %0 = xt.permute(%a) {permutation = [2, 0, 1]} : tensor<2x3x5xf32> -> tensor<5x2x3xf32>
+    return %0 : tensor<5x2x3xf32>
+  }
 }
 
 // CHECK-LABEL: func.func @reduce_ops
-// CHECK: nova.reduce(%arg0) {axis = 1 : i64, mode = 0 : i32} : tensor<16x16xf32> -> tensor<16x1xf32>
-// CHECK: nova.reduce(%arg0) {axis = 1 : i64, mode = 1 : i32} : tensor<16x16xf32> -> tensor<16x1xf32>
+// CHECK: nova.reduce 0 %arg0 {axis = 1 : i64} : tensor<16x16xf32> -> tensor<16x1xf32>
+// CHECK: nova.reduce 1 %arg0 {axis = 1 : i64} : tensor<16x16xf32> -> tensor<16x1xf32>
 // CHECK-LABEL: func.func @reduce_axis0
-// CHECK: nova.reduce(%arg0) {axis = 0 : i64, mode = 0 : i32} : tensor<16x16xf32> -> tensor<1x16xf32>
+// CHECK: nova.reduce 0 %arg0 {axis = 0 : i64} : tensor<16x16xf32> -> tensor<1x16xf32>
 // CHECK-LABEL: func.func @broadcast_sub
-// CHECK: nova.broadcast(%arg0, %arg1) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 3 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<16x16xf32>, tensor<16x1xf32> -> tensor<16x16xf32>
+// CHECK: nova.broadcast 3 %arg0, %arg1 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<16x16xf32>, tensor<16x1xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @elementwise_mul
-// CHECK: nova.elementwise(%arg0, %arg1) {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, mode = 2 : i32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<16x16xf32>, tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.elementwise 2 %arg0, %arg1 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<16x16xf32>, tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @square_mul
-// CHECK: nova.square(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.square %arg0 : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @rsqrt
-// CHECK: nova.rsqrt(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.rsqrt %arg0 : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @exp
-// CHECK: nova.exp(%arg0) : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.exp %arg0 : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @reciprocal
-// CHECK: nova.reciprocal(%arg0) : tensor<16x1xf32> -> tensor<16x1xf32>
+// CHECK: nova.reciprocal %arg0 : tensor<16x1xf32> -> tensor<16x1xf32>
 // CHECK-LABEL: func.func @scalar_like_mul
 // CHECK: xt.mul(%arg0, %arg1) : tensor<16x1xf32>, tensor<1x1xf32> -> tensor<16x1xf32>
 // CHECK-LABEL: func.func @constant_scalar_mul
-// CHECK: nova.scalar(%arg0) {mode = 2 : i32, rhs = 1.250000e-01 : f32} : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.scalar 2 %arg0, 1.250000e-01 : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @constant_scalar_sub
-// CHECK: nova.scalar(%arg0) {mode = 1 : i32, rhs = -1.250000e-01 : f32} : tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.scalar 1 %arg0, -1.250000e-01 : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @matmul
 // CHECK: %[[SCALE:.*]] = arith.constant dense<1.000000e+00> : tensor<1x1xf32>
 // CHECK: %[[BIAS:.*]] = arith.constant dense<0.000000e+00> : tensor<1x1xf32>
-// CHECK: nova.matmul(%arg0, %arg1, %[[SCALE]], %[[BIAS]]) : tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32> -> tensor<16x8xf32>
+// CHECK: nova.matmul %arg0, %arg1, %[[SCALE]], %[[BIAS]] : tensor<16x32xf32>, tensor<32x8xf32>, tensor<1x1xf32>, tensor<1x1xf32> -> tensor<16x8xf32>
 // CHECK-LABEL: func.func @load_store_constant_index
-// CHECK: %[[LOAD:.*]] = nova.load(%arg0) {shared = 1 : i64, start = [0, 32]} : memref<128x16xf32> -> tensor<16x16xf32>
-// CHECK: nova.store(%[[LOAD]], %arg1) {start = [16, 32]} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
+// CHECK: %[[LOAD:.*]] = nova.load %arg0 [0, 32] {shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.store %[[LOAD]], %arg1 [16, 32] : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
 // CHECK-LABEL: func.func @load_store_dynamic_index
 // CHECK: %[[DYNLOAD:.*]] = xt.load(%arg0, %arg2, %{{.*}}) : (memref<128x16xf32>, i32, i32) -> tensor<16x16xf32>
 // CHECK: xt.store(%[[DYNLOAD]], %arg1, %arg2, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
 // CHECK-LABEL: func.func @cast_ops
-// CHECK: %[[ITOF:.*]] = nova.itof(%arg0) : tensor<5x16xi8> -> tensor<5x16xf32>
-// CHECK: %[[FTOI:.*]] = nova.ftoi(%arg1) : tensor<5x16xf32> -> tensor<5x16xi8>
+// CHECK: %[[ITOF:.*]] = nova.itof %arg0 : tensor<5x16xi8> -> tensor<5x16xf32>
+// CHECK: %[[FTOI:.*]] = nova.ftoi %arg1 : tensor<5x16xf32> -> tensor<5x16xi8>
 // CHECK: return %[[ITOF]], %[[FTOI]] : tensor<5x16xf32>, tensor<5x16xi8>
+// CHECK-LABEL: func.func @permute
+// CHECK: nova.permute %arg0 [2, 0, 1] : tensor<2x3x5xf32> -> tensor<5x2x3xf32>
+// CHECK: return %{{.*}} : tensor<5x2x3xf32>

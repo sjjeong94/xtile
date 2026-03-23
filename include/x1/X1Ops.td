@@ -24,8 +24,8 @@ class X1_MemRefCommandOp<string mnemonic, string summaryText> :
                        I64Attr:$bank,
                        I64Attr:$space,
                        I64Attr:$thread,
-                       I64ArrayAttr:$start,
-                       I64ArrayAttr:$shape);
+                       DenseI64ArrayAttr:$start,
+                       DenseI64ArrayAttr:$shape);
   let hasVerifier = 1;
   let assemblyFormat = "$source ` ` `{` `bank` `=` $bank `,` `space` `=` $space `,` `thread` `=` $thread `,` `start` `=` $start `,` `shape` `=` $shape `}` attr-dict `:` type($source)";
 }
@@ -57,7 +57,7 @@ class X1_UnaryBankCommandOp<string mnemonic, string summaryText> :
                        I64Attr:$inp1,
                        I64Attr:$out0,
                        I64Attr:$out1,
-                       I64ArrayAttr:$shape);
+                       DenseI64ArrayAttr:$shape);
   let assemblyFormat = "` ` `{` `inp0` `=` $inp0 `,` `inp1` `=` $inp1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `}` attr-dict";
 }
 
@@ -67,7 +67,7 @@ def X1_ReduceOp : X1_Op<"reduce"> {
                        I64Attr:$inp1,
                        I64Attr:$out0,
                        I64Attr:$out1,
-                       I64ArrayAttr:$shape,
+                       DenseI64ArrayAttr:$shape,
                        I32Attr:$axis,
                        I32Attr:$mode);
   let assemblyFormat = "` ` `{` `inp0` `=` $inp0 `,` `inp1` `=` $inp1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `,` `axis` `=` $axis `,` `mode` `=` $mode `}` attr-dict";
@@ -81,7 +81,7 @@ def X1_BroadcastOp : X1_Op<"broadcast"> {
                        I64Attr:$rhs1,
                        I64Attr:$out0,
                        I64Attr:$out1,
-                       I64ArrayAttr:$shape,
+                       DenseI64ArrayAttr:$shape,
                        I32Attr:$axis,
                        F32Attr:$lhs_a,
                        F32Attr:$lhs_b,
@@ -103,7 +103,7 @@ def X1_ScalarFmaOp : X1_Op<"scalar_fma"> {
                        I64Attr:$inp1,
                        I64Attr:$out0,
                        I64Attr:$out1,
-                       I64ArrayAttr:$shape,
+                       DenseI64ArrayAttr:$shape,
                        F32Attr:$a,
                        F32Attr:$b);
   let assemblyFormat = "` ` `{` `inp0` `=` $inp0 `,` `inp1` `=` $inp1 `,` `out0` `=` $out0 `,` `out1` `=` $out1 `,` `shape` `=` $shape `,` `a` `=` $a `,` `b` `=` $b `}` attr-dict";

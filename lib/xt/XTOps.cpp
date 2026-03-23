@@ -401,6 +401,42 @@ static LogicalResult verifyTransposeShape(Operation *op, Value input,
   return success();
 }
 
+static LogicalResult verifyPermuteShape(Operation *op, Value input, Value result,
+                                        DenseI64ArrayAttr permutationAttr) {
+  auto inputType = llvm::dyn_cast<RankedTensorType>(input.getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(result.getType());
+  if (!inputType || !resultType)
+    return op->emitOpError("requires ranked tensor operand and result");
+  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
+    return op->emitOpError("requires statically shaped tensors");
+  if (inputType.getElementType() != resultType.getElementType())
+    return op->emitOpError("requires operand and result element types to match");
+  if (inputType.getRank() != resultType.getRank())
+    return op->emitOpError("requires operand and result ranks to match");
+
+  int64_t rank = inputType.getRank();
+  ArrayRef<int64_t> permutation = permutationAttr.asArrayRef();
+  if (static_cast<int64_t>(permutation.size()) != rank)
+    return op->emitOpError("permutation attribute length must match tensor rank");
+
+  SmallVector<bool> seen(rank, false);
+  for (int64_t dim : permutation) {
+    if (dim < 0 || dim >= rank)
+      return op->emitOpError("permutation entries must be in range [0, rank)");
+    if (seen[dim])
+      return op->emitOpError(
+          "permutation attribute must contain each dimension exactly once");
+    seen[dim] = true;
+  }
+
+  for (auto [resultDim, inputIndex] : llvm::zip_equal(resultType.getShape(), permutation)) {
+    if (resultDim != inputType.getDimSize(inputIndex))
+      return op->emitOpError(
+          "permute result shape must match the input shape reordered by permutation");
+  }
+  return success();
+}
+
 static int64_t getStaticElementCount(RankedTensorType type) {
   int64_t count = 1;
   for (int64_t dim : type.getShape())
@@ -425,6 +461,10 @@ LogicalResult ReshapeOp::verify() {
 
 LogicalResult TransposeOp::verify() {
   return verifyTransposeShape(*this, getInput(), getResult());
+}
+
+LogicalResult PermuteOp::verify() {
+  return verifyPermuteShape(*this, getInput(), getResult(), getPermutationAttr());
 }
 
 static bool isZeroTensor(Value value) {

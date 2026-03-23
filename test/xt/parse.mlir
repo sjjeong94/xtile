@@ -38,6 +38,11 @@ func.func @generic_reshape_transpose(%arg0: tensor<64x16xf32>) -> tensor<64x16xf
   func.return %2 : tensor<64x16xf32>
 }
 
+func.func @generic_permute(%arg0: tensor<2x3x5xf32>) -> tensor<5x2x3xf32> {
+  %0 = xt.permute(%arg0) {permutation = [2, 0, 1]} : tensor<2x3x5xf32> -> tensor<5x2x3xf32>
+  func.return %0 : tensor<5x2x3xf32>
+}
+
 func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>} {
   func.return
 }
@@ -71,6 +76,8 @@ func.func @cast_ops(%arg0: tensor<5x16xi8>, %arg1: tensor<5x16xf32>) {
 // CHECK: %[[RESHAPE0:.*]] = xt.reshape(%arg0) : tensor<64x16xf32> -> tensor<2x32x16xf32>
 // CHECK: %[[TRANSPOSE:.*]] = xt.transpose(%[[RESHAPE0]]) : tensor<2x32x16xf32> -> tensor<2x16x32xf32>
 // CHECK: %[[RESHAPE1:.*]] = xt.reshape(%[[TRANSPOSE]]) : tensor<2x16x32xf32> -> tensor<64x16xf32>
+// CHECK-LABEL: func.func @generic_permute
+// CHECK: %[[PERMUTE:.*]] = xt.permute(%arg0) {permutation = [2, 0, 1]} : tensor<2x3x5xf32> -> tensor<5x2x3xf32>
 // CHECK-LABEL: func.func @kernel_with_grid() attributes {xt.grid = array<i32: 32, 8, 1>}
 // CHECK-LABEL: func.func @cast_ops
 // CHECK: %[[ITOF:.*]] = xt.itof(%arg0) : tensor<5x16xi8> -> tensor<5x16xf32>

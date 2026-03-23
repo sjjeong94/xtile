@@ -129,6 +129,24 @@ func.func @bad_transpose_shape(%arg0: tensor<2x32x16xf32>) -> tensor<2x32x16xf32
 
 // -----
 
+func.func @bad_permute_shape(%arg0: tensor<2x3x5xf32>) -> tensor<2x5x3xf32> {
+  %0 = xt.permute(%arg0) {permutation = [2, 0, 1]} : tensor<2x3x5xf32> -> tensor<2x5x3xf32>
+  func.return %0 : tensor<2x5x3xf32>
+}
+
+// ERR: permute result shape must match the input shape reordered by permutation
+
+// -----
+
+func.func @bad_permute_attr(%arg0: tensor<2x3x5xf32>) -> tensor<5x2x3xf32> {
+  %0 = xt.permute(%arg0) {permutation = [2, 0, 0]} : tensor<2x3x5xf32> -> tensor<5x2x3xf32>
+  func.return %0 : tensor<5x2x3xf32>
+}
+
+// ERR: permutation attribute must contain each dimension exactly once
+
+// -----
+
 func.func @bad_grid_rank() attributes {xt.grid = array<i32: 32, 8>} {
   func.return
 }

@@ -165,4 +165,14 @@ def XT_TransposeOp : XT_Op<"transpose", [Pure]> {
       "`(` $input `)` attr-dict `:` type($input) `->` type($result)";
 }
 
+def XT_PermuteOp : XT_Op<"permute", [Pure]> {
+  let summary = "permute tensor tile dimensions";
+  let arguments = (ins XT_RankedTensor:$input,
+                       DenseI64ArrayAttr:$permutation);
+  let results = (outs XT_RankedTensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $input `)` `{` `permutation` `=` $permutation `}` attr-dict `:` type($input) `->` type($result)";
+}
+
 #endif // XT_OPS

@@ -37,6 +37,12 @@ static void normalizeBanks(TensorLayout &layout) {
   if (layout.threadCount <= 1) {
     return;
   }
+  if (layout.banks.size() == 1) {
+    int64_t firstBank = layout.banks.front();
+    layout.banks.clear();
+    for (int64_t lane = 0; lane < layout.threadCount; ++lane)
+      layout.banks.push_back(firstBank + lane);
+  }
 }
 
 static std::optional<int64_t> getEncodingI64(Type type, StringRef name) {
@@ -64,40 +70,30 @@ static std::optional<SmallVector<int64_t>> getEncodingI64Array(Type type,
   if (!encoding)
     return std::nullopt;
 
-  auto attr = dyn_cast_or_null<ArrayAttr>(encoding.get(name));
-  if (!attr)
-    return std::nullopt;
-
-  SmallVector<int64_t> values;
-  values.reserve(attr.size());
-  for (Attribute element : attr) {
-    auto intAttr = dyn_cast<IntegerAttr>(element);
-    if (!intAttr)
-      return std::nullopt;
-    values.push_back(intAttr.getInt());
+  if (auto denseAttr = dyn_cast_or_null<DenseI64ArrayAttr>(encoding.get(name)))
+    return SmallVector<int64_t>(denseAttr.asArrayRef().begin(),
+                                denseAttr.asArrayRef().end());
+  if (auto attr = dyn_cast_or_null<ArrayAttr>(encoding.get(name))) {
+    SmallVector<int64_t> values;
+    values.reserve(attr.size());
+    for (Attribute element : attr) {
+      auto intAttr = dyn_cast<IntegerAttr>(element);
+      if (!intAttr)
+        return std::nullopt;
+      values.push_back(intAttr.getInt());
+    }
+    return values;
   }
-  return values;
+  return std::nullopt;
 }
 
 static FailureOr<SmallVector<int64_t>>
-toIntVector(Operation *op, ArrayAttr attr, StringRef name) {
+toIntVector(Operation *op, DenseI64ArrayAttr attr, StringRef name) {
   if (!attr) {
     op->emitOpError() << "requires " << name << " attribute";
     return failure();
   }
-
-  SmallVector<int64_t> values;
-  values.reserve(attr.size());
-  for (Attribute element : attr) {
-    auto intAttr = dyn_cast<IntegerAttr>(element);
-    if (!intAttr) {
-      op->emitOpError() << "requires " << name
-                        << " to contain only i64 integer attributes";
-      return failure();
-    }
-    values.push_back(intAttr.getInt());
-  }
-  return values;
+  return SmallVector<int64_t>(attr.asArrayRef().begin(), attr.asArrayRef().end());
 }
 
 static FailureOr<TensorLayout> getTensorLayoutFromType(Operation *op, Type type) {
@@ -136,17 +132,17 @@ static FailureOr<TensorLayout> getTensorLayoutFromType(Operation *op, Type type)
     op->emitOpError("requires bank0 encoding attribute");
     return failure();
   }
+  normalizeBanks(layout);
   if (layout.threadCount > 1 &&
       layout.banks.size() != static_cast<size_t>(layout.threadCount)) {
     op->emitOpError("requires one bank per x1 lane");
     return failure();
   }
-  normalizeBanks(layout);
   return layout;
 }
 
 static FailureOr<MemRefLayout> getMemRefLayout(Operation *op, Type type,
-                                               ArrayAttr startAttr) {
+                                               DenseI64ArrayAttr startAttr) {
   FailureOr<TensorLayout> tensor = getTensorLayoutFromType(op, type);
   if (failed(tensor))
     return failure();
@@ -218,12 +214,8 @@ static int64_t getMatrixRowsPerLane(const TensorLayout &layout) {
   return layout.threadCount > 1 ? layout.chunkRows : layout.shape.front();
 }
 
-static ArrayAttr getI64ArrayAttr(OpBuilder &builder, ArrayRef<int64_t> values) {
-  SmallVector<Attribute> attrs;
-  attrs.reserve(values.size());
-  for (int64_t value : values)
-    attrs.push_back(builder.getI64IntegerAttr(value));
-  return builder.getArrayAttr(attrs);
+static DenseI64ArrayAttr getI64ArrayAttr(OpBuilder &builder, ArrayRef<int64_t> values) {
+  return DenseI64ArrayAttr::get(builder.getContext(), values);
 }
 
 static SmallVector<int64_t> getChunkStart(const MemRefLayout &layout,

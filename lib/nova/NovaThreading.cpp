@@ -33,27 +33,25 @@ static std::optional<SmallVector<int64_t>> getEncodingI64Array(Type type,
   if (!encoding)
     return std::nullopt;
 
-  auto attr = dyn_cast_or_null<ArrayAttr>((*encoding).get(name));
-  if (!attr)
-    return std::nullopt;
-
-  SmallVector<int64_t> values;
-  values.reserve(attr.size());
-  for (Attribute element : attr) {
-    auto intAttr = dyn_cast<IntegerAttr>(element);
-    if (!intAttr)
-      return std::nullopt;
-    values.push_back(intAttr.getInt());
+  if (auto denseAttr = dyn_cast_or_null<DenseI64ArrayAttr>((*encoding).get(name)))
+    return SmallVector<int64_t>(denseAttr.asArrayRef().begin(),
+                                denseAttr.asArrayRef().end());
+  if (auto attr = dyn_cast_or_null<ArrayAttr>((*encoding).get(name))) {
+    SmallVector<int64_t> values;
+    values.reserve(attr.size());
+    for (Attribute element : attr) {
+      auto intAttr = dyn_cast<IntegerAttr>(element);
+      if (!intAttr)
+        return std::nullopt;
+      values.push_back(intAttr.getInt());
+    }
+    return values;
   }
-  return values;
+  return std::nullopt;
 }
 
-static ArrayAttr getI64ArrayAttr(MLIRContext *context, ArrayRef<int64_t> values) {
-  SmallVector<Attribute> elements;
-  elements.reserve(values.size());
-  for (int64_t value : values)
-    elements.push_back(IntegerAttr::get(IntegerType::get(context, 64), value));
-  return ArrayAttr::get(context, elements);
+static DenseI64ArrayAttr getI64ArrayAttr(MLIRContext *context, ArrayRef<int64_t> values) {
+  return DenseI64ArrayAttr::get(context, values);
 }
 
 static std::optional<int64_t> getThreadRows(Type type) {

@@ -83,8 +83,8 @@ static FailureOr<int64_t> getTensorSizeInBytes(RankedTensorType type) {
   return type.getNumElements() * *elementBytes;
 }
 
-static FailureOr<int64_t> getTensorSizeInBytesForShape(RankedTensorType type,
-                                                       ArrayAttr shapeAttr) {
+static FailureOr<int64_t> getTensorSizeInBytesForShape(
+    RankedTensorType type, DenseI64ArrayAttr shapeAttr) {
   if (!type || !shapeAttr)
     return failure();
 
@@ -93,12 +93,8 @@ static FailureOr<int64_t> getTensorSizeInBytesForShape(RankedTensorType type,
     return failure();
 
   int64_t numElements = 1;
-  for (Attribute attr : shapeAttr) {
-    auto intAttr = dyn_cast<IntegerAttr>(attr);
-    if (!intAttr)
-      return failure();
-    numElements *= intAttr.getInt();
-  }
+  for (int64_t dim : shapeAttr.asArrayRef())
+    numElements *= dim;
   return numElements * *elementBytes;
 }
 
@@ -193,12 +189,14 @@ static SmallVector<int64_t> getAllocationSliceSizes(RankedTensorType type) {
   SmallVector<int64_t> sizes;
   auto encoding = dyn_cast_or_null<DictionaryAttr>(type.getEncoding());
   if (encoding) {
-    if (auto shape0 = dyn_cast_or_null<ArrayAttr>(encoding.get("shape0"))) {
+    if (auto shape0 =
+            dyn_cast_or_null<DenseI64ArrayAttr>(encoding.get("shape0"))) {
       FailureOr<int64_t> size = getTensorSizeInBytesForShape(type, shape0);
       if (succeeded(size))
         sizes.push_back(*size);
     }
-    if (auto shape1 = dyn_cast_or_null<ArrayAttr>(encoding.get("shape1"))) {
+    if (auto shape1 =
+            dyn_cast_or_null<DenseI64ArrayAttr>(encoding.get("shape1"))) {
       FailureOr<int64_t> size = getTensorSizeInBytesForShape(type, shape1);
       if (succeeded(size) && *size > 0)
         sizes.push_back(*size);

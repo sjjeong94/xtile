@@ -24,20 +24,18 @@ def main():
 
     module_asm = xt._module_asm(module)
     expected_snippets = (
-        "nova.load(",
-        "nova.square(",
-        "nova.barrier() {mode = 0 : i32}",
-        "nova.barrier() {mode = 1 : i32}",
-        "nova.store(",
-        "bank0 = 0 : i64",
-        "space = 3 : i64",
-        "shape0 = [8, 16]",
+        "x1.load ",
+        "x1.square ",
+        "x1.barrier {mode = 0}",
+        "x1.barrier {mode = 1}",
+        "x1.store ",
+        "bank = 0",
+        "space = 3",
+        "shape = [8, 16]",
     )
     for snippet in expected_snippets:
         if snippet not in module_asm:
             raise AssertionError(f"expected {snippet!r} in compiled IR:\n{module_asm}")
-    if "threading =" in module_asm:
-        raise AssertionError(f"did not expect threading annotation in IR:\n{module_asm}")
 
     print(module_asm)
 

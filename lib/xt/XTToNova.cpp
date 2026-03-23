@@ -79,9 +79,9 @@ static FailureOr<int64_t> extractConstantInt(Value value) {
   return failure();
 }
 
-static FailureOr<ArrayAttr> extractConstantStarts(MLIRContext *context,
-                                                  ValueRange values,
-                                                  RankedTensorType type) {
+static FailureOr<DenseI64ArrayAttr> extractConstantStarts(MLIRContext *context,
+                                                          ValueRange values,
+                                                          RankedTensorType type) {
   if (!type || !type.hasStaticShape())
     return failure();
 
@@ -89,15 +89,15 @@ static FailureOr<ArrayAttr> extractConstantStarts(MLIRContext *context,
   if (shape.size() != values.size())
     return failure();
 
-  SmallVector<Attribute> starts;
+  SmallVector<int64_t> starts;
   starts.reserve(values.size());
   for (auto [value, dim] : llvm::zip(values, shape)) {
     FailureOr<int64_t> index = extractConstantInt(value);
     if (failed(index))
       return failure();
-    starts.push_back(IntegerAttr::get(IntegerType::get(context, 64), *index * dim));
+    starts.push_back(*index * dim);
   }
-  return ArrayAttr::get(context, starts);
+  return DenseI64ArrayAttr::get(context, starts);
 }
 
 template <typename OpTy>
@@ -232,6 +232,27 @@ struct UnaryCastOpToNovaPattern : OpRewritePattern<OpTy> {
   static StringRef getNovaName();
 };
 
+struct PermuteOpToNovaPattern : OpRewritePattern<xt::PermuteOp> {
+  using OpRewritePattern<xt::PermuteOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(xt::PermuteOp op,
+                                PatternRewriter &rewriter) const override {
+    auto inputType = dyn_cast<RankedTensorType>(op.getInput().getType());
+    auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
+    if (!inputType || !resultType)
+      return failure();
+
+    OperationState state(op.getLoc(), "nova.permute");
+    state.addOperands(op.getInput());
+    state.addTypes(resultType);
+    state.addAttribute("permutation", op.getPermutationAttr());
+
+    Operation *novaOp = rewriter.create(state);
+    rewriter.replaceOp(op, novaOp->getResults());
+    return success();
+  }
+};
+
 struct MatmulOpToNovaPattern : OpRewritePattern<xt::MatmulOp> {
   using OpRewritePattern<xt::MatmulOp>::OpRewritePattern;
 
@@ -270,7 +291,7 @@ struct LoadOpToNovaPattern : OpRewritePattern<xt::LoadOp> {
     if (!resultType)
       return failure();
 
-    FailureOr<ArrayAttr> startAttr = extractConstantStarts(
+    FailureOr<DenseI64ArrayAttr> startAttr = extractConstantStarts(
         rewriter.getContext(), op.getCoords(), resultType);
     if (failed(startAttr))
       return failure();
@@ -297,7 +318,7 @@ struct StoreOpToNovaPattern : OpRewritePattern<xt::StoreOp> {
     if (!valueType)
       return failure();
 
-    FailureOr<ArrayAttr> startAttr = extractConstantStarts(
+    FailureOr<DenseI64ArrayAttr> startAttr = extractConstantStarts(
         rewriter.getContext(), op.getCoords(), valueType);
     if (failed(startAttr))
       return failure();
@@ -372,6 +393,7 @@ public:
                  BinaryOpToNovaPattern<xt::SubOp>,
                  LoadOpToNovaPattern,
                  MatmulOpToNovaPattern,
+                 PermuteOpToNovaPattern,
                  UnaryTensorOpToNovaPattern<xt::ExpOp>,
                  UnaryTensorOpToNovaPattern<xt::ReciprocalOp>,
                  UnaryTensorOpToNovaPattern<xt::RsqrtOp>,

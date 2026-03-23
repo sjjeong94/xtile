@@ -94,6 +94,41 @@ LogicalResult ReduceOp::verify() {
   return success();
 }
 
+LogicalResult PermuteOp::verify() {
+  auto inputType = dyn_cast<RankedTensorType>(getInput().getType());
+  auto resultType = dyn_cast<RankedTensorType>(getResult().getType());
+  if (!inputType || !resultType)
+    return emitOpError("requires ranked tensor operand and result");
+  if (!inputType.hasStaticShape() || !resultType.hasStaticShape())
+    return emitOpError("requires statically shaped tensors");
+  if (inputType.getElementType() != resultType.getElementType())
+    return emitOpError("requires operand and result element types to match");
+  if (inputType.getRank() != resultType.getRank())
+    return emitOpError("requires operand and result ranks to match");
+
+  int64_t rank = inputType.getRank();
+  ArrayRef<int64_t> permutation = getPermutation();
+  if (static_cast<int64_t>(permutation.size()) != rank)
+    return emitOpError("permutation attribute length must match tensor rank");
+
+  SmallVector<bool> seen(rank, false);
+  for (int64_t dim : permutation) {
+    if (dim < 0 || dim >= rank)
+      return emitOpError("permutation entries must be in range [0, rank)");
+    if (seen[dim])
+      return emitOpError(
+          "permutation attribute must contain each dimension exactly once");
+    seen[dim] = true;
+  }
+
+  for (auto [resultDim, inputIndex] : llvm::zip_equal(resultType.getShape(), permutation)) {
+    if (resultDim != inputType.getDimSize(inputIndex))
+      return emitOpError(
+          "permute result shape must match the input shape reordered by permutation");
+  }
+  return success();
+}
+
 LogicalResult IToFOp::verify() {
   return verifyTensorCastTypes(*this, getInput(), getResult(),
                                /*intToFloat=*/true);
