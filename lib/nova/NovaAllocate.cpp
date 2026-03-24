@@ -20,6 +20,7 @@ namespace mlir::nova {
 } // namespace mlir::nova
 
 using namespace mlir;
+using namespace mlir::nova;
 
 namespace {
 constexpr int64_t kBankSize = 2048 * 64;
@@ -163,40 +164,35 @@ static RankedTensorType withEncoding(RankedTensorType type,
                                      std::optional<int64_t> bank1,
                                      std::optional<MemorySpace> space) {
   MLIRContext *context = type.getContext();
-  NamedAttrList attrs;
-  if (auto dict = dyn_cast_or_null<DictionaryAttr>(type.getEncoding()))
-    attrs.append(dict.getValue());
-  attrs.erase("bank");
-  if (bank0) {
-    attrs.set("bank0", IntegerAttr::get(IntegerType::get(context, 64), *bank0));
-  } else {
-    attrs.erase("bank0");
-  }
-  if (bank1) {
-    attrs.set("bank1", IntegerAttr::get(IntegerType::get(context, 64), *bank1));
-  } else {
-    attrs.erase("bank1");
-  }
-  if (space) {
-    attrs.set("space", IntegerAttr::get(IntegerType::get(context, 64),
-                                        static_cast<int64_t>(*space)));
-  }
+  auto layout = dyn_cast_or_null<TensorLayoutAttr>(type.getEncoding());
+  DenseI64ArrayAttr start0 = layout ? layout.getStart0() : DenseI64ArrayAttr();
+  DenseI64ArrayAttr start1 = layout ? layout.getStart1() : DenseI64ArrayAttr();
+  DenseI64ArrayAttr shape0 = layout ? layout.getShape0() : DenseI64ArrayAttr();
+  DenseI64ArrayAttr shape1 = layout ? layout.getShape1() : DenseI64ArrayAttr();
+  IntegerAttr bank0Attr = bank0 ? IntegerAttr::get(IntegerType::get(context, 64), *bank0)
+                                : IntegerAttr();
+  IntegerAttr bank1Attr = bank1 ? IntegerAttr::get(IntegerType::get(context, 64), *bank1)
+                                : IntegerAttr();
+  IntegerAttr spaceAttr =
+      space ? IntegerAttr::get(IntegerType::get(context, 64),
+                               static_cast<int64_t>(*space))
+            : IntegerAttr();
+
   return RankedTensorType::get(type.getShape(), type.getElementType(),
-                               DictionaryAttr::get(context, attrs));
+                               TensorLayoutAttr::get(context, bank0Attr, bank1Attr,
+                                                     start0, start1, shape0,
+                                                     shape1, spaceAttr));
 }
 
 static SmallVector<int64_t> getAllocationSliceSizes(RankedTensorType type) {
   SmallVector<int64_t> sizes;
-  auto encoding = dyn_cast_or_null<DictionaryAttr>(type.getEncoding());
-  if (encoding) {
-    if (auto shape0 =
-            dyn_cast_or_null<DenseI64ArrayAttr>(encoding.get("shape0"))) {
+  if (auto layout = dyn_cast_or_null<TensorLayoutAttr>(type.getEncoding())) {
+    if (auto shape0 = layout.getShape0()) {
       FailureOr<int64_t> size = getTensorSizeInBytesForShape(type, shape0);
       if (succeeded(size))
         sizes.push_back(*size);
     }
-    if (auto shape1 =
-            dyn_cast_or_null<DenseI64ArrayAttr>(encoding.get("shape1"))) {
+    if (auto shape1 = layout.getShape1()) {
       FailureOr<int64_t> size = getTensorSizeInBytesForShape(type, shape1);
       if (succeeded(size) && *size > 0)
         sizes.push_back(*size);

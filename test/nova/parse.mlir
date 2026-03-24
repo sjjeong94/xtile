@@ -21,10 +21,12 @@ func.func @parse_keep_alive(%arg0: tensor<16x16xf32>, %arg1: tensor<16x16xf32>, 
   func.return
 }
 
-func.func @parse_load_store(%arr: memref<128x16xf32>, %tile: tensor<16x16xf32>) -> tensor<16x16xf32> {
-  %0 = nova.load %arr [0, 2] {shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32>
-  nova.store %tile, %arr [1, 2] {shared = 1 : i64} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
-  func.return %0 : tensor<16x16xf32>
+func.func @parse_load_store(%arr: memref<128x16xf32>,
+                            %tile: tensor<16x16xf32, #nova.tensor_layout<bank0 = 3, space = 3>>)
+    -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 7, space = 3>> {
+  %0 = nova.load %arr [0, 2] {shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 7, space = 3>>
+  nova.store %tile, %arr [1, 2] {shared = 1 : i64} : (tensor<16x16xf32, #nova.tensor_layout<bank0 = 3, space = 3>>, memref<128x16xf32>) -> ()
+  func.return %0 : tensor<16x16xf32, #nova.tensor_layout<bank0 = 7, space = 3>>
 }
 
 func.func @parse_casts(%arg0: tensor<5x16xi8>, %arg1: tensor<5x16xf32>) -> (tensor<5x16xf32>, tensor<5x16xi8>) {
@@ -57,9 +59,9 @@ func.func @parse_int_result_matmul(%arg0: tensor<16x32xi8>, %arg1: tensor<32x8xi
 // CHECK: nova.keep_alive %arg0, %arg1, %arg2 : tensor<16x16xf32>, tensor<16x16xf32>, tensor<16x16xf32>
 // CHECK: return
 // CHECK-LABEL: func.func @parse_load_store
-// CHECK: %[[LOAD:.*]] = nova.load %arg0 [0, 2] {shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32>
-// CHECK: nova.store %arg1, %arg0 [1, 2] {shared = 1 : i64} : (tensor<16x16xf32>, memref<128x16xf32>) -> ()
-// CHECK: return %[[LOAD]] : tensor<16x16xf32>
+// CHECK: %[[LOAD:.*]] = nova.load %arg0 [0, 2] {shared = 1 : i64} : memref<128x16xf32> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 7, space = 3>>
+// CHECK: nova.store %arg1, %arg0 [1, 2] {shared = 1 : i64} : (tensor<16x16xf32, #nova.tensor_layout<bank0 = 3, space = 3>>, memref<128x16xf32>) -> ()
+// CHECK: return %[[LOAD]] : tensor<16x16xf32, #nova.tensor_layout<bank0 = 7, space = 3>>
 // CHECK-LABEL: func.func @parse_casts
 // CHECK: %[[ITOF:.*]] = nova.itof %arg0 : tensor<5x16xi8> -> tensor<5x16xf32>
 // CHECK: %[[FTOI:.*]] = nova.ftoi %arg1 : tensor<5x16xf32> -> tensor<5x16xi8>

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import xtile as xt
 
 
@@ -20,9 +25,9 @@ def main():
         raise AssertionError("xt.nova_threading should return the original module object")
 
     module_asm = xt._module_asm(module)
-    if "shape0 = array<i64: 3, 8>" not in module_asm or "shape1 = array<i64: 2, 8>" not in module_asm:
+    if "#nova.tensor_layout<range0 [0, 0] [3, 8], range1 [3, 0] [2, 8]>" not in module_asm:
         raise AssertionError(f"expected slice annotations in IR:\n{module_asm}")
-    if "threading =" in module_asm:
+    if "threading =" in module_asm or "shape0 = array<i64:" in module_asm:
         raise AssertionError(f"did not expect threading annotation in IR:\n{module_asm}")
 
     print(module_asm)

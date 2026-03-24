@@ -18,6 +18,7 @@ namespace mlir::nova {
 } // namespace mlir::nova
 
 using namespace mlir;
+using namespace mlir::nova;
 
 namespace {
 struct TensorLayout {
@@ -45,44 +46,47 @@ static void normalizeBanks(TensorLayout &layout) {
   }
 }
 
-static std::optional<int64_t> getEncodingI64(Type type, StringRef name) {
+static TensorLayoutAttr getTensorLayout(Type type) {
   auto tensorType = dyn_cast<RankedTensorType>(type);
-  if (!tensorType)
-    return std::nullopt;
+  return tensorType ? dyn_cast_or_null<TensorLayoutAttr>(tensorType.getEncoding())
+                    : TensorLayoutAttr();
+}
 
-  auto encoding = dyn_cast_or_null<DictionaryAttr>(tensorType.getEncoding());
-  if (!encoding)
-    return std::nullopt;
-
-  auto attr = dyn_cast_or_null<IntegerAttr>(encoding.get(name));
+static std::optional<int64_t> getLayoutInt(IntegerAttr attr) {
   if (!attr)
     return std::nullopt;
   return attr.getInt();
 }
 
-static std::optional<SmallVector<int64_t>> getEncodingI64Array(Type type,
-                                                               StringRef name) {
+static std::optional<SmallVector<int64_t>> getLayoutArray(DenseI64ArrayAttr attr) {
+  if (!attr)
+    return std::nullopt;
+  return SmallVector<int64_t>(attr.asArrayRef().begin(), attr.asArrayRef().end());
+}
+
+static std::optional<int64_t> getLegacyEncodingI64(Type type, StringRef name) {
   auto tensorType = dyn_cast<RankedTensorType>(type);
   if (!tensorType)
     return std::nullopt;
-
   auto encoding = dyn_cast_or_null<DictionaryAttr>(tensorType.getEncoding());
   if (!encoding)
     return std::nullopt;
+  if (auto attr = dyn_cast_or_null<IntegerAttr>(encoding.get(name)))
+    return attr.getInt();
+  return std::nullopt;
+}
 
-  if (auto denseAttr = dyn_cast_or_null<DenseI64ArrayAttr>(encoding.get(name)))
+static std::optional<SmallVector<int64_t>> getLegacyEncodingI64Array(Type type,
+                                                                     StringRef name) {
+  auto tensorType = dyn_cast<RankedTensorType>(type);
+  if (!tensorType)
+    return std::nullopt;
+  auto encoding = dyn_cast_or_null<DictionaryAttr>(tensorType.getEncoding());
+  if (!encoding)
+    return std::nullopt;
+  if (auto denseAttr = dyn_cast_or_null<DenseI64ArrayAttr>(encoding.get(name))) {
     return SmallVector<int64_t>(denseAttr.asArrayRef().begin(),
                                 denseAttr.asArrayRef().end());
-  if (auto attr = dyn_cast_or_null<ArrayAttr>(encoding.get(name))) {
-    SmallVector<int64_t> values;
-    values.reserve(attr.size());
-    for (Attribute element : attr) {
-      auto intAttr = dyn_cast<IntegerAttr>(element);
-      if (!intAttr)
-        return std::nullopt;
-      values.push_back(intAttr.getInt());
-    }
-    return values;
   }
   return std::nullopt;
 }
@@ -104,19 +108,28 @@ static FailureOr<TensorLayout> getTensorLayoutFromType(Operation *op, Type type)
   }
 
   TensorLayout layout;
-  layout.space = getEncodingI64(type, "space").value_or(0);
+  TensorLayoutAttr tensorLayout = getTensorLayout(type);
+  layout.space = getLayoutInt(tensorLayout ? tensorLayout.getSpace() : IntegerAttr())
+                     .value_or(getLegacyEncodingI64(type, "space").value_or(0));
   layout.shape.assign(tensorType.getShape().begin(), tensorType.getShape().end());
 
   int64_t fullRows = layout.shape.front();
-  if (std::optional<SmallVector<int64_t>> shape0 = getEncodingI64Array(type, "shape0")) {
+  std::optional<SmallVector<int64_t>> shape0 =
+      tensorLayout ? getLayoutArray(tensorLayout.getShape0())
+                   : getLegacyEncodingI64Array(type, "shape0");
+  if (shape0) {
     if (shape0->empty()) {
       op->emitOpError("requires non-empty shape0 encoding attribute");
       return failure();
     }
     layout.chunkRows = (*shape0)[0];
-    layout.threadCount = getEncodingI64Array(type, "shape1") ? 2 : 1;
+    layout.threadCount =
+        (tensorLayout ? getLayoutArray(tensorLayout.getShape1())
+                      : getLegacyEncodingI64Array(type, "shape1"))
+                ? 2
+                : 1;
   } else {
-    int64_t threading = getEncodingI64(type, "threading").value_or(fullRows);
+    int64_t threading = getLegacyEncodingI64(type, "threading").value_or(fullRows);
     if (threading <= 0) {
       op->emitOpError("requires positive threading when present");
       return failure();
@@ -124,9 +137,15 @@ static FailureOr<TensorLayout> getTensorLayoutFromType(Operation *op, Type type)
     layout.chunkRows = std::min(fullRows, threading);
     layout.threadCount = std::max<int64_t>(1, llvm::divideCeil(fullRows, threading));
   }
-  if (std::optional<int64_t> bank0 = getEncodingI64(type, "bank0")) {
+  std::optional<int64_t> bank0 =
+      tensorLayout ? getLayoutInt(tensorLayout.getBank0())
+                   : getLegacyEncodingI64(type, "bank0");
+  if (bank0) {
     layout.banks.push_back(*bank0);
-    if (std::optional<int64_t> bank1 = getEncodingI64(type, "bank1"))
+    std::optional<int64_t> bank1 =
+        tensorLayout ? getLayoutInt(tensorLayout.getBank1())
+                     : getLegacyEncodingI64(type, "bank1");
+    if (bank1)
       layout.banks.push_back(*bank1);
   } else {
     op->emitOpError("requires bank0 encoding attribute");

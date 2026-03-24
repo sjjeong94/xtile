@@ -1,4 +1,8 @@
 add_mlir_dialect(NovaOps nova)
+set(LLVM_TARGET_DEFINITIONS NovaDialect.td)
+mlir_tablegen(NovaAttrDefs.h.inc -gen-attrdef-decls -attrdefs-dialect=nova)
+mlir_tablegen(NovaAttrDefs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=nova)
+add_public_tablegen_target(MLIRNovaAttrDefsIncGen)
 add_mlir_doc(NovaDialect NovaDialect nova/ -gen-dialect-doc)
 add_mlir_doc(NovaOps NovaOps nova/ -gen-op-doc)
 

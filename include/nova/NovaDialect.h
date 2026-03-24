@@ -6,4 +6,7 @@
 
 #include "nova/NovaOpsDialect.h.inc"
 
+#define GET_ATTRDEF_CLASSES
+#include "nova/NovaAttrDefs.h.inc"
+
 #endif // NOVA_NOVADIALECT_H
