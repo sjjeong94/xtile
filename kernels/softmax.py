@@ -1,4 +1,8 @@
 import argparse
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import xtile as xt
 
@@ -10,7 +14,8 @@ def softmax_kernel(inp, out, trow, col):
     x = xt.load(inp, index=(bid_x, 0), shape=(trow, col))
     x = x - xt.max(x, axis=-1)
     x = xt.exp(x)
-    x = x * xt.reciprocal(xt.sum(x, axis=-1))
+    r = xt.sum(x, axis=-1)
+    x = x / r
     xt.store(out, index=(bid_x, 0), tile=x)
 
 

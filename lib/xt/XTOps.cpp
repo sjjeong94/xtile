@@ -40,6 +40,57 @@ LogicalResult LoadOp::verify() {
   return verifyMemRefAndTensor(*this, memRefType, tensorType);
 }
 
+LogicalResult LoadConv2DOp::verify() {
+  auto memRefType = llvm::dyn_cast<MemRefType>(getSource().getType());
+  auto filterType = llvm::dyn_cast<RankedTensorType>(getFilter().getType());
+  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
+  if (!memRefType)
+    return emitOpError("requires a ranked memref source operand");
+  if (!filterType || !resultType)
+    return emitOpError("requires ranked tensor filter operand and result");
+  if (!memRefType.hasStaticShape() || !filterType.hasStaticShape() ||
+      !resultType.hasStaticShape())
+    return emitOpError("requires statically shaped memref/tensor types");
+  if (memRefType.getRank() != 4 || filterType.getRank() != 4 ||
+      resultType.getRank() != 4)
+    return emitOpError("requires rank-4 source, filter, and result types");
+  if (static_cast<int64_t>(getCoords().size()) != memRefType.getRank())
+    return emitOpError("coordinate count must match source memref rank");
+  if (getPadAttr().size() != 4)
+    return emitOpError("pad attribute must have exactly 4 entries");
+  if (getStrideAttr().size() != 2)
+    return emitOpError("stride attribute must have exactly 2 entries");
+  if (getDilationAttr().size() != 2)
+    return emitOpError("dilation attribute must have exactly 2 entries");
+  if (auto group = getGroupAttr(); group && group.getInt() <= 0)
+    return emitOpError("group attribute must be positive");
+  for (int64_t pad : getPadAttr().asArrayRef()) {
+    if (pad < 0)
+      return emitOpError("pad attribute entries must be non-negative");
+  }
+  for (int64_t stride : getStrideAttr().asArrayRef()) {
+    if (stride <= 0)
+      return emitOpError("stride attribute entries must be positive");
+  }
+  for (int64_t dilation : getDilationAttr().asArrayRef()) {
+    if (dilation <= 0)
+      return emitOpError("dilation attribute entries must be positive");
+  }
+  if (!memRefType.getElementType().isInteger(8) ||
+      !filterType.getElementType().isInteger(8))
+    return emitOpError("load_conv2d requires i8 source and filter element types");
+  if (!resultType.getElementType().isF32() &&
+      !resultType.getElementType().isBF16())
+    return emitOpError("load_conv2d requires f32 or bf16 result element type");
+  if (memRefType.getDimSize(3) != filterType.getDimSize(2))
+    return emitOpError(
+        "load_conv2d requires source and filter channel dimensions to match");
+  if (resultType.getDimSize(3) > filterType.getDimSize(3))
+    return emitOpError(
+        "load_conv2d result channel dimension must not exceed filter output channels");
+  return success();
+}
+
 LogicalResult StoreOp::verify() {
   auto tensorType = llvm::dyn_cast<RankedTensorType>(getValue().getType());
   auto memRefType = llvm::dyn_cast<MemRefType>(getDest().getType());
@@ -185,16 +236,6 @@ static LogicalResult verifyMatmulLikeShape(Operation *op, RankedTensorType lhsTy
   return success();
 }
 
-static FailureOr<int64_t> computeConvOutputDim(int64_t inputSize, int64_t kernelSize,
-                                               int64_t padBefore, int64_t padAfter,
-                                               int64_t stride, int64_t dilation) {
-  int64_t effectiveKernel = dilation * (kernelSize - 1) + 1;
-  int64_t numerator = inputSize + padBefore + padAfter - effectiveKernel;
-  if (numerator < 0)
-    return failure();
-  return numerator / stride + 1;
-}
-
 LogicalResult MatmulOp::verify() {
   auto lhsType = llvm::dyn_cast<RankedTensorType>(getLhs().getType());
   auto rhsType = llvm::dyn_cast<RankedTensorType>(getRhs().getType());
@@ -229,120 +270,6 @@ LogicalResult MMAOp::verify() {
   Type accElem = accType.getElementType();
   if (!accElem.isF32() && !accElem.isBF16())
     return emitOpError("mma requires f32 or bf16 accumulator and result tensors");
-  return success();
-}
-
-LogicalResult Conv2DOp::verify() {
-  auto inputType = llvm::dyn_cast<RankedTensorType>(getInput().getType());
-  auto filterType = llvm::dyn_cast<RankedTensorType>(getFilter().getType());
-  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
-  if (!inputType || !filterType || !resultType)
-    return emitOpError("requires ranked tensor operands and result");
-  if (!inputType.hasStaticShape() || !filterType.hasStaticShape() ||
-      !resultType.hasStaticShape())
-    return emitOpError("requires statically shaped tensors");
-  if (inputType.getRank() != 4 || filterType.getRank() != 4 ||
-      resultType.getRank() != 4)
-    return emitOpError("requires rank-4 input, filter, and result tensors");
-  if (getPadAttr().size() != 4)
-    return emitOpError("pad attribute must have exactly 4 entries");
-  if (getStrideAttr().size() != 2)
-    return emitOpError("stride attribute must have exactly 2 entries");
-  if (getDilationAttr().size() != 2)
-    return emitOpError("dilation attribute must have exactly 2 entries");
-  for (int64_t pad : getPadAttr().asArrayRef()) {
-    if (pad < 0)
-      return emitOpError("pad attribute entries must be non-negative");
-  }
-  for (int64_t stride : getStrideAttr().asArrayRef()) {
-    if (stride <= 0)
-      return emitOpError("stride attribute entries must be positive");
-  }
-  for (int64_t dilation : getDilationAttr().asArrayRef()) {
-    if (dilation <= 0)
-      return emitOpError("dilation attribute entries must be positive");
-  }
-  if (!inputType.getElementType().isInteger(8) ||
-      !filterType.getElementType().isInteger(8))
-    return emitOpError("conv2d requires i8 input and filter tensors");
-  if (!resultType.getElementType().isF32() &&
-      !resultType.getElementType().isBF16())
-    return emitOpError("conv2d requires f32 or bf16 result tensors");
-  if (inputType.getDimSize(3) != filterType.getDimSize(2))
-    return emitOpError("conv2d requires input and filter channel dimensions to match");
-  if (inputType.getDimSize(0) != resultType.getDimSize(0))
-    return emitOpError("conv2d result batch dimension must match input");
-  if (filterType.getDimSize(3) != resultType.getDimSize(3))
-    return emitOpError("conv2d result channel dimension must match filter output channels");
-
-  FailureOr<int64_t> outH = computeConvOutputDim(
-      inputType.getDimSize(1), filterType.getDimSize(0), getPadAttr()[0], getPadAttr()[2],
-      getStrideAttr()[0], getDilationAttr()[0]);
-  FailureOr<int64_t> outW = computeConvOutputDim(
-      inputType.getDimSize(2), filterType.getDimSize(1), getPadAttr()[1], getPadAttr()[3],
-      getStrideAttr()[1], getDilationAttr()[1]);
-  if (failed(outH) || failed(outW))
-    return emitOpError("conv2d kernel configuration produces an invalid output shape");
-  if (*outH != resultType.getDimSize(1) || *outW != resultType.getDimSize(2))
-    return emitOpError("conv2d result spatial dimensions do not match pad/stride/dilation");
-  return success();
-}
-
-LogicalResult DepthwiseConv2DOp::verify() {
-  auto inputType = llvm::dyn_cast<RankedTensorType>(getInput().getType());
-  auto filterType = llvm::dyn_cast<RankedTensorType>(getFilter().getType());
-  auto resultType = llvm::dyn_cast<RankedTensorType>(getResult().getType());
-  if (!inputType || !filterType || !resultType)
-    return emitOpError("requires ranked tensor operands and result");
-  if (!inputType.hasStaticShape() || !filterType.hasStaticShape() ||
-      !resultType.hasStaticShape())
-    return emitOpError("requires statically shaped tensors");
-  if (inputType.getRank() != 4 || filterType.getRank() != 4 ||
-      resultType.getRank() != 4)
-    return emitOpError("requires rank-4 input, filter, and result tensors");
-  if (getPadAttr().size() != 4)
-    return emitOpError("pad attribute must have exactly 4 entries");
-  if (getStrideAttr().size() != 2)
-    return emitOpError("stride attribute must have exactly 2 entries");
-  if (getDilationAttr().size() != 2)
-    return emitOpError("dilation attribute must have exactly 2 entries");
-  for (int64_t pad : getPadAttr().asArrayRef()) {
-    if (pad < 0)
-      return emitOpError("pad attribute entries must be non-negative");
-  }
-  for (int64_t stride : getStrideAttr().asArrayRef()) {
-    if (stride <= 0)
-      return emitOpError("stride attribute entries must be positive");
-  }
-  for (int64_t dilation : getDilationAttr().asArrayRef()) {
-    if (dilation <= 0)
-      return emitOpError("dilation attribute entries must be positive");
-  }
-  if (!inputType.getElementType().isInteger(8) ||
-      !filterType.getElementType().isInteger(8))
-    return emitOpError("depthwise_conv2d requires i8 input and filter tensors");
-  if (!resultType.getElementType().isF32() &&
-      !resultType.getElementType().isBF16())
-    return emitOpError("depthwise_conv2d requires f32 or bf16 result tensors");
-  if (filterType.getDimSize(2) != 1)
-    return emitOpError("depthwise_conv2d requires filter input-channel dimension to be 1");
-  if (inputType.getDimSize(0) != resultType.getDimSize(0))
-    return emitOpError("depthwise_conv2d result batch dimension must match input");
-  if (inputType.getDimSize(3) != resultType.getDimSize(3))
-    return emitOpError("depthwise_conv2d requires input and result channel dimensions to match");
-  if (filterType.getDimSize(3) != inputType.getDimSize(3))
-    return emitOpError("depthwise_conv2d requires filter channel dimension to match input/output channels");
-
-  FailureOr<int64_t> outH = computeConvOutputDim(
-      inputType.getDimSize(1), filterType.getDimSize(0), getPadAttr()[0], getPadAttr()[2],
-      getStrideAttr()[0], getDilationAttr()[0]);
-  FailureOr<int64_t> outW = computeConvOutputDim(
-      inputType.getDimSize(2), filterType.getDimSize(1), getPadAttr()[1], getPadAttr()[3],
-      getStrideAttr()[1], getDilationAttr()[1]);
-  if (failed(outH) || failed(outW))
-    return emitOpError("depthwise_conv2d kernel configuration produces an invalid output shape");
-  if (*outH != resultType.getDimSize(1) || *outW != resultType.getDimSize(2))
-    return emitOpError("depthwise_conv2d result spatial dimensions do not match pad/stride/dilation");
   return success();
 }
 

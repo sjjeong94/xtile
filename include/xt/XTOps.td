@@ -29,6 +29,21 @@ def XT_LoadOp : XT_Op<"load"> {
       "`(` $source `,` $coords `)` attr-dict `:` functional-type(operands, results)";
 }
 
+def XT_LoadConv2DOp : XT_Op<"load_conv2d"> {
+  let summary = "load a tensor tile from a memref and apply conv2d with a filter tensor";
+  let arguments = (ins XT_RankedMemRef:$source,
+                       XT_RankedTensor:$filter,
+                       Variadic<XT_AnyCoord>:$coords,
+                       OptionalAttr<I64Attr>:$group,
+                       DenseI64ArrayAttr:$pad,
+                       DenseI64ArrayAttr:$stride,
+                       DenseI64ArrayAttr:$dilation);
+  let results = (outs XT_RankedTensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "`(` $source `,` $filter `,` $coords `)` attr-dict `:` functional-type(operands, results)";
+}
+
 def XT_StoreOp : XT_Op<"store"> {
   let summary = "store a tensor tile into a memref";
   let arguments = (ins XT_RankedTensor:$value,
@@ -107,30 +122,6 @@ def XT_MMAOp : XT_Op<"mma", [Pure]> {
   let hasVerifier = 1;
   let assemblyFormat =
       "`(` $lhs `,` $rhs `,` $acc `)` attr-dict `:` type($lhs) `,` type($rhs) `,` type($acc) `->` type($result)";
-}
-
-def XT_Conv2DOp : XT_Op<"conv2d", [Pure]> {
-  let summary = "tile 2d convolution";
-  let arguments = (ins XT_RankedTensor:$input, XT_RankedTensor:$filter,
-                       DenseI64ArrayAttr:$pad,
-                       DenseI64ArrayAttr:$stride,
-                       DenseI64ArrayAttr:$dilation);
-  let results = (outs XT_RankedTensor:$result);
-  let hasVerifier = 1;
-  let assemblyFormat =
-      "`(` $input `,` $filter `)` attr-dict `:` type($input) `,` type($filter) `->` type($result)";
-}
-
-def XT_DepthwiseConv2DOp : XT_Op<"depthwise_conv2d", [Pure]> {
-  let summary = "tile depthwise 2d convolution";
-  let arguments = (ins XT_RankedTensor:$input, XT_RankedTensor:$filter,
-                       DenseI64ArrayAttr:$pad,
-                       DenseI64ArrayAttr:$stride,
-                       DenseI64ArrayAttr:$dilation);
-  let results = (outs XT_RankedTensor:$result);
-  let hasVerifier = 1;
-  let assemblyFormat =
-      "`(` $input `,` $filter `)` attr-dict `:` type($input) `,` type($filter) `->` type($result)";
 }
 
 class XT_ReduceOp<string mnemonic, string summaryText> :

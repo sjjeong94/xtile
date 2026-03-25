@@ -130,6 +130,19 @@ def Nova_MatmulOp : Nova_Op<"matmul", [Pure]> {
       "$lhs `,` $rhs `,` $scale `,` $bias attr-dict `:` type($lhs) `,` type($rhs) `,` type($scale) `,` type($bias) `->` type($result)";
 }
 
+def Nova_Conv2DOp : Nova_Op<"conv2d", [Pure]> {
+  let summary = "hardware tile 2d convolution op";
+  let arguments = (ins Nova_RankedTensor:$input, Nova_RankedTensor:$filter,
+                       OptionalAttr<I64Attr>:$group,
+                       DenseI64ArrayAttr:$pad,
+                       DenseI64ArrayAttr:$stride,
+                       DenseI64ArrayAttr:$dilation);
+  let results = (outs Nova_RankedTensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "$input `,` $filter attr-dict `:` type($input) `,` type($filter) `->` type($result)";
+}
+
 def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {
   let summary = "hardware tile reduction op";
   let arguments = (ins Nova_RankedTensor:$input, I64Attr:$axis, I32Attr:$mode);

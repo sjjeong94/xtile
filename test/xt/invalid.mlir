@@ -66,30 +66,23 @@ func.func @bad_broadcast_shape(%arg0: tensor<16x16xf32>, %arg1: tensor<8x16xf32>
 
 // -----
 
-func.func @bad_conv2d_pad_attr(%arg0: tensor<1x32x64x128xi8>, %arg1: tensor<3x3x128x64xi8>) -> tensor<1x32x64x64xf32> {
-  %0 = xt.conv2d(%arg0, %arg1) {dilation = array<i64: 1, 1>, pad = array<i64: 1, 1, 1>, stride = array<i64: 1, 1>} : tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
-  func.return %0 : tensor<1x32x64x64xf32>
+func.func @bad_load_conv2d_shape(%arg0: memref<1x34x66x128xi8>, %arg1: tensor<3x3x64x64xi8>) -> tensor<1x32x64x32xf32> {
+  %c0 = arith.constant 0 : i32
+  %0 = xt.load_conv2d(%arg0, %arg1, %c0, %c0, %c0, %c0) {dilation = array<i64: 1, 1>, group = 1 : i64, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : (memref<1x34x66x128xi8>, tensor<3x3x64x64xi8>, i32, i32, i32, i32) -> tensor<1x32x64x32xf32>
+  func.return %0 : tensor<1x32x64x32xf32>
 }
 
-// ERR: pad attribute must have exactly 4 entries
+// ERR: load_conv2d requires source and filter channel dimensions to match
 
 // -----
 
-func.func @bad_conv2d_shape(%arg0: tensor<1x32x64x128xi8>, %arg1: tensor<3x3x64x64xi8>) -> tensor<1x32x64x64xf32> {
-  %0 = xt.conv2d(%arg0, %arg1) {dilation = array<i64: 1, 1>, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : tensor<1x32x64x128xi8>, tensor<3x3x64x64xi8> -> tensor<1x32x64x64xf32>
-  func.return %0 : tensor<1x32x64x64xf32>
+func.func @bad_load_conv2d_group(%arg0: memref<1x34x66x128xi8>, %arg1: tensor<3x3x128x64xi8>) -> tensor<1x32x64x32xf32> {
+  %c0 = arith.constant 0 : i32
+  %0 = xt.load_conv2d(%arg0, %arg1, %c0, %c0, %c0, %c0) {dilation = array<i64: 1, 1>, group = 0 : i64, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : (memref<1x34x66x128xi8>, tensor<3x3x128x64xi8>, i32, i32, i32, i32) -> tensor<1x32x64x32xf32>
+  func.return %0 : tensor<1x32x64x32xf32>
 }
 
-// ERR: conv2d requires input and filter channel dimensions to match
-
-// -----
-
-func.func @bad_depthwise_filter_shape(%arg0: tensor<1x32x64x64xi8>, %arg1: tensor<3x3x2x64xi8>) -> tensor<1x32x64x64xf32> {
-  %0 = xt.depthwise_conv2d(%arg0, %arg1) {dilation = array<i64: 1, 1>, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : tensor<1x32x64x64xi8>, tensor<3x3x2x64xi8> -> tensor<1x32x64x64xf32>
-  func.return %0 : tensor<1x32x64x64xf32>
-}
-
-// ERR: depthwise_conv2d requires filter input-channel dimension to be 1
+// ERR: group attribute must be positive
 
 // -----
 

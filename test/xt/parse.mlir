@@ -25,10 +25,15 @@ func.func @generic_mma(%arg0: tensor<16x32xi8>, %arg1: tensor<32x8xi8>, %arg2: t
   func.return %0 : tensor<16x8xf32>
 }
 
-func.func @generic_conv_and_reduce(%arg0: tensor<1x32x64x128xi8>, %arg1: tensor<3x3x128x64xi8>, %arg2: tensor<16x16xf32>) -> (tensor<1x32x64x64xf32>, tensor<16x1xf32>) {
-  %0 = xt.conv2d(%arg0, %arg1) {dilation = array<i64: 1, 1>, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
-  %1 = xt.reduce_sum(%arg2) {axis = 1 : i64} : tensor<16x16xf32> -> tensor<16x1xf32>
-  func.return %0, %1 : tensor<1x32x64x64xf32>, tensor<16x1xf32>
+func.func @generic_reduce(%arg0: tensor<16x16xf32>) -> tensor<16x1xf32> {
+  %0 = xt.reduce_sum(%arg0) {axis = 1 : i64} : tensor<16x16xf32> -> tensor<16x1xf32>
+  func.return %0 : tensor<16x1xf32>
+}
+
+func.func @generic_load_conv2d(%arg0: memref<1x34x66x128xi8>, %arg1: tensor<3x3x128x64xi8>) -> tensor<1x32x64x32xf32> {
+  %c0 = arith.constant 0 : i32
+  %2 = xt.load_conv2d(%arg0, %arg1, %c0, %c0, %c0, %c0) {dilation = array<i64: 1, 1>, group = 1 : i64, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : (memref<1x34x66x128xi8>, tensor<3x3x128x64xi8>, i32, i32, i32, i32) -> tensor<1x32x64x32xf32>
+  func.return %2 : tensor<1x32x64x32xf32>
 }
 
 func.func @generic_reshape_transpose(%arg0: tensor<64x16xf32>) -> tensor<64x16xf32> {
@@ -69,9 +74,11 @@ func.func @cast_ops(%arg0: tensor<5x16xi8>, %arg1: tensor<5x16xf32>) {
 // CHECK: xt.store(%[[MM]], %arg2, %[[SHARED_X]], %[[SHARED_Y]]) : (tensor<64x64xf32>, memref<128x512xf32>, i32, i32) -> ()
 // CHECK-LABEL: func.func @generic_mma
 // CHECK: %[[MMA:.*]] = xt.mma(%arg0, %arg1, %arg2) : tensor<16x32xi8>, tensor<32x8xi8>, tensor<16x8xf32> -> tensor<16x8xf32>
-// CHECK-LABEL: func.func @generic_conv_and_reduce
-// CHECK: %[[CONV:.*]] = xt.conv2d(%arg0, %arg1) {dilation = array<i64: 1, 1>, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
-// CHECK: %[[SUM:.*]] = xt.reduce_sum(%arg2) {axis = 1 : i64} : tensor<16x16xf32> -> tensor<16x1xf32>
+// CHECK-LABEL: func.func @generic_reduce
+// CHECK: %[[SUM:.*]] = xt.reduce_sum(%arg0) {axis = 1 : i64} : tensor<16x16xf32> -> tensor<16x1xf32>
+// CHECK-LABEL: func.func @generic_load_conv2d
+// CHECK: %[[C0:.*]] = arith.constant 0 : i32
+// CHECK: %[[LCONV:.*]] = xt.load_conv2d(%arg0, %arg1, %[[C0]], %[[C0]], %[[C0]], %[[C0]]) {dilation = array<i64: 1, 1>, group = 1 : i64, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : (memref<1x34x66x128xi8>, tensor<3x3x128x64xi8>, i32, i32, i32, i32) -> tensor<1x32x64x32xf32>
 // CHECK-LABEL: func.func @generic_reshape_transpose
 // CHECK: %[[RESHAPE0:.*]] = xt.reshape(%arg0) : tensor<64x16xf32> -> tensor<2x32x16xf32>
 // CHECK: %[[TRANSPOSE:.*]] = xt.transpose(%[[RESHAPE0]]) : tensor<2x32x16xf32> -> tensor<2x16x32xf32>

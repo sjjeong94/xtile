@@ -106,6 +106,81 @@ def check_matmul_pipeline():
     return actual
 
 
+def check_truediv_lowers_to_mul_reciprocal():
+    a = xt.Array(shape=(8, 8), dtype=xt.float32)
+    b = xt.Array(shape=(8, 1), dtype=xt.float32)
+    out = xt.Array(shape=(8, 8), dtype=xt.float32)
+
+    @xt.kernel
+    def divide_kernel(x, y, z):
+        tile = xt.load(x, index=(0, 0), shape=(8, 8))
+        denom = xt.load(y, index=(0, 0), shape=(8, 1))
+        tile = tile / denom
+        xt.store(z, index=(0, 0), tile=tile)
+
+    module = xt.convert(
+        divide_kernel,
+        args=(a, b, out),
+        grid=(1, 1, 1),
+        double_buffering=False,
+    )
+    actual = str(module)
+    expected_snippets = (
+        "xt.reciprocal(",
+        "xt.mul(",
+        "tensor<8x1xf32>",
+        "tensor<8x8xf32>",
+    )
+    for snippet in expected_snippets:
+        if snippet not in actual:
+            raise AssertionError(f"expected {snippet!r} in truediv MLIR:\n{actual}")
+    if "xt.div(" in actual:
+        raise AssertionError(f"did not expect a dedicated division op:\n{actual}")
+
+    return actual
+
+
+def check_load_conv2d_emits_xt_op():
+    src = xt.Array(shape=(1, 34, 66, 128), dtype=xt.int8)
+    filt_src = xt.Array(shape=(3, 3, 128, 64), dtype=xt.int8)
+    out = xt.Array(shape=(1, 32, 64, 32), dtype=xt.float32)
+
+    @xt.kernel
+    def load_conv2d_kernel(x, f, y):
+        filt = xt.load(f, index=(0, 0, 0, 0), shape=(3, 3, 128, 64))
+        tile = xt.load_conv2d(
+            x,
+            filt,
+            index=(0, 0, 0, 0),
+            shape=(1, 32, 64, 32),
+            group=1,
+            pad=(1, 1, 1, 1),
+            stride=(1, 1),
+            dilation=(1, 1),
+        )
+        xt.store(y, index=(0, 0, 0, 0), tile=tile)
+
+    module = xt.convert(
+        load_conv2d_kernel,
+        args=(src, filt_src, out),
+        grid=(1, 1, 1),
+        double_buffering=False,
+    )
+    actual = str(module)
+    expected_snippets = (
+        "xt.load_conv2d(",
+        "tensor<3x3x128x64xi8>",
+        "tensor<1x32x64x32xf32>",
+        "group = 1 : i64",
+        "pad = array<i64: 1, 1, 1, 1>",
+    )
+    for snippet in expected_snippets:
+        if snippet not in actual:
+            raise AssertionError(f"expected {snippet!r} in load_conv2d MLIR:\n{actual}")
+
+    return actual
+
+
 def check_missing_high_level_ops():
     unary_in = xt.Array(shape=(8, 8), dtype=xt.float32)
     unary_out = xt.Array(shape=(8, 8), dtype=xt.float32)
@@ -158,44 +233,17 @@ def check_missing_high_level_ops():
     rhs = xt.Array(shape=(32, 8), dtype=xt.int8)
     acc_in = xt.Array(shape=(16, 8), dtype=xt.float32)
     acc_out = xt.Array(shape=(16, 8), dtype=xt.float32)
-    conv_in = xt.Array(shape=(1, 5, 5, 4), dtype=xt.int8)
-    conv_filter = xt.Array(shape=(3, 3, 4, 6), dtype=xt.int8)
-    conv_out = xt.Array(shape=(1, 3, 3, 6), dtype=xt.float32)
-    depth_filter = xt.Array(shape=(3, 3, 1, 4), dtype=xt.int8)
-    depth_out = xt.Array(shape=(1, 3, 3, 4), dtype=xt.float32)
-
     @xt.kernel
-    def compute_ops(a, b, acc_src, acc_dst, cin, cfilter, cout, dfilter, dout):
+    def compute_ops(a, b, acc_src, acc_dst):
         a_tile = xt.load(a, index=(0, 0), shape=(16, 32))
         b_tile = xt.load(b, index=(0, 0), shape=(32, 8))
         acc_tile = xt.load(acc_src, index=(0, 0), shape=(16, 8))
         acc_tile = xt.mma(a_tile, b_tile, acc_tile)
         xt.store(acc_dst, index=(0, 0), tile=acc_tile)
 
-        cin_tile = xt.load(cin, index=(0, 0, 0, 0), shape=(1, 5, 5, 4))
-        cfilter_tile = xt.load(cfilter, index=(0, 0, 0, 0), shape=(3, 3, 4, 6))
-        conv_tile = xt.conv2d(
-            cin_tile,
-            cfilter_tile,
-            pad=(0, 0, 0, 0),
-            stride=(1, 1),
-            dilation=(1, 1),
-        )
-        xt.store(cout, index=(0, 0, 0, 0), tile=conv_tile)
-
-        dfilter_tile = xt.load(dfilter, index=(0, 0, 0, 0), shape=(3, 3, 1, 4))
-        depth_tile = xt.depthwise_conv2d(
-            cin_tile,
-            dfilter_tile,
-            pad=(0, 0, 0, 0),
-            stride=(1, 1),
-            dilation=(1, 1),
-        )
-        xt.store(dout, index=(0, 0, 0, 0), tile=depth_tile)
-
     compute_module = xt.convert(
         compute_ops,
-        args=(lhs, rhs, acc_in, acc_out, conv_in, conv_filter, conv_out, depth_filter, depth_out),
+        args=(lhs, rhs, acc_in, acc_out),
         grid=(1, 1, 1),
         double_buffering=False,
     )
@@ -203,13 +251,6 @@ def check_missing_high_level_ops():
     compute_expected = (
         "xt.mma(",
         "tensor<16x8xf32>",
-        "xt.conv2d(",
-        "pad = array<i64: 0, 0, 0, 0>",
-        "stride = array<i64: 1, 1>",
-        "dilation = array<i64: 1, 1>",
-        "tensor<1x3x3x6xf32>",
-        "xt.depthwise_conv2d(",
-        "tensor<1x3x3x4xf32>",
     )
     for snippet in compute_expected:
         if snippet not in compute_actual:
@@ -246,10 +287,16 @@ def check_missing_high_level_ops():
 def main():
     softmax = check_rowwise_softmax()
     matmul = check_matmul_pipeline()
+    truediv = check_truediv_lowers_to_mul_reciprocal()
+    load_conv2d = check_load_conv2d_emits_xt_op()
     unary_shape, compute, reduce_axis0 = check_missing_high_level_ops()
     print(softmax)
     print()
     print(matmul)
+    print()
+    print(truediv)
+    print()
+    print(load_conv2d)
     print()
     print(unary_shape)
     print()

@@ -80,6 +80,9 @@ class TensorValue:
     def __add__(self, other: object) -> TensorValue:
         return add(self, other)
 
+    def __truediv__(self, other: object) -> TensorValue:
+        return truediv(self, other)
+
 
 @dataclass(frozen=True)
 class LoadOp:
@@ -87,6 +90,18 @@ class LoadOp:
     array: KernelArg
     index: tuple[BlockId | ConstantIndex, ...]
     shared: int | None
+
+
+@dataclass(frozen=True)
+class LoadConv2DOp:
+    result: TensorValue
+    array: KernelArg
+    filter: TensorValue
+    index: tuple[BlockId | ConstantIndex, ...]
+    group: int
+    pad: tuple[int, int, int, int]
+    stride: tuple[int, int]
+    dilation: tuple[int, int]
 
 
 @dataclass(frozen=True)
@@ -181,6 +196,7 @@ class TraceContext:
         )
         self.operations: list[
             LoadOp
+            | LoadConv2DOp
             | StoreOp
             | ReduceOp
             | UnaryOp
@@ -236,6 +252,66 @@ class TraceContext:
         self.load_counts[array.index] += 1
         return result
 
+    def load_conv2d(
+        self,
+        array: KernelArg,
+        filter_value: TensorValue,
+        index: tuple[BlockId | int, ...],
+        shape: tuple[int, ...],
+        *,
+        group: int = 1,
+        pad: tuple[int, int, int, int],
+        stride: tuple[int, int],
+        dilation: tuple[int, int],
+    ) -> TensorValue:
+        self._validate_kernel_arg(array)
+        self._validate_tensor_value(filter_value)
+        normalized_index = self._normalize_index(index)
+        self._validate_shape(shape)
+        self._validate_attr_tuple("pad", pad, 4)
+        self._validate_attr_tuple("stride", stride, 2, positive=True)
+        self._validate_attr_tuple("dilation", dilation, 2, positive=True)
+        if group <= 0:
+            raise ValueError("xt.load_conv2d requires group to be positive")
+        if len(array.array.shape) != 4:
+            raise ValueError("xt.load_conv2d requires a rank-4 source memref")
+        if len(filter_value.shape) != 4:
+            raise ValueError("xt.load_conv2d requires a rank-4 filter tensor")
+        if len(normalized_index) != 4 or len(shape) != 4:
+            raise ValueError(
+                "xt.load_conv2d requires rank-4 index and result shape tuples"
+            )
+        if array.array.dtype != int8 or filter_value.dtype != int8:
+            raise TypeError("xt.load_conv2d currently requires int8 source/filter")
+        if array.array.shape[3] != filter_value.shape[2]:
+            raise ValueError(
+                "xt.load_conv2d requires source/filter channel dimensions to match"
+            )
+        if shape[3] > filter_value.shape[3]:
+            raise ValueError(
+                "xt.load_conv2d result channel dimension must not exceed filter output channels"
+            )
+
+        result = TensorValue(
+            ssa_name=self._next_name("load_conv"),
+            shape=shape,
+            dtype=float32,
+        )
+        self.operations.append(
+            LoadConv2DOp(
+                result=result,
+                array=array,
+                filter=filter_value,
+                index=normalized_index,
+                group=group,
+                pad=pad,
+                stride=stride,
+                dilation=dilation,
+            )
+        )
+        self.load_counts[array.index] += 1
+        return result
+
     def reduce_max(self, input_value: TensorValue, axis: int = -1) -> TensorValue:
         return self._reduce("xt.reduce_max", input_value, "row_max", axis)
 
@@ -274,6 +350,11 @@ class TraceContext:
 
     def mul(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         return self._binary("xt.mul", lhs, rhs, "normalized")
+
+    def truediv(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
+        self._validate_tensor_value(lhs)
+        self._validate_tensor_value(rhs)
+        return self.mul(lhs, self.reciprocal(rhs))
 
     def matmul(self, lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         self._validate_tensor_value(lhs)
@@ -385,44 +466,6 @@ class TraceContext:
         )
         return result
 
-    def conv2d(
-        self,
-        input_value: TensorValue,
-        filter_value: TensorValue,
-        *,
-        pad: tuple[int, int, int, int],
-        stride: tuple[int, int],
-        dilation: tuple[int, int],
-    ) -> TensorValue:
-        return self._conv_like(
-            "xt.conv2d",
-            input_value,
-            filter_value,
-            pad=pad,
-            stride=stride,
-            dilation=dilation,
-            depthwise=False,
-        )
-
-    def depthwise_conv2d(
-        self,
-        input_value: TensorValue,
-        filter_value: TensorValue,
-        *,
-        pad: tuple[int, int, int, int],
-        stride: tuple[int, int],
-        dilation: tuple[int, int],
-    ) -> TensorValue:
-        return self._conv_like(
-            "xt.depthwise_conv2d",
-            input_value,
-            filter_value,
-            pad=pad,
-            stride=stride,
-            dilation=dilation,
-            depthwise=True,
-        )
-
     def store(
         self,
         array: KernelArg,
@@ -478,6 +521,24 @@ class TraceContext:
                     f"{op.result.ssa_name} = xt.load(%{arg_names[op.array.index]}, "
                     f"{self._format_index(op.index)}){attr} : "
                     f"({self._format_operand_type_list((self._format_memref_type(op.array.array),), len(op.index))}) -> "
+                    f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
+                )
+                continue
+
+            if isinstance(op, LoadConv2DOp):
+                lines.append(
+                    "  "
+                    f"{op.result.ssa_name} = xt.load_conv2d(%{arg_names[op.array.index]}, "
+                    f"{op.filter.ssa_name}, {self._format_index(op.index)}) "
+                    "{"
+                    f"dilation = array<i64: {', '.join(str(v) for v in op.dilation)}>, "
+                    f"group = {op.group} : i64, "
+                    f"pad = array<i64: {', '.join(str(v) for v in op.pad)}>, "
+                    f"stride = array<i64: {', '.join(str(v) for v in op.stride)}>"
+                    "} : "
+                    f"({self._format_memref_type(op.array.array)}, "
+                    f"{self._format_tensor_type(op.filter.shape, op.filter.dtype)}, "
+                    f"{', '.join(['i32'] * len(op.index))}) -> "
                     f"{self._format_tensor_type(op.result.shape, op.result.dtype)}"
                 )
                 continue
@@ -749,83 +810,6 @@ class TraceContext:
             if not positive and item < 0:
                 raise ValueError(f"{name} values must be non-negative")
 
-    def _conv_like(
-        self,
-        op_name: str,
-        input_value: TensorValue,
-        filter_value: TensorValue,
-        *,
-        pad: tuple[int, int, int, int],
-        stride: tuple[int, int],
-        dilation: tuple[int, int],
-        depthwise: bool,
-    ) -> TensorValue:
-        self._validate_tensor_value(input_value)
-        self._validate_tensor_value(filter_value)
-        self._validate_attr_tuple("pad", pad, 4)
-        self._validate_attr_tuple("stride", stride, 2, positive=True)
-        self._validate_attr_tuple("dilation", dilation, 2, positive=True)
-        if len(input_value.shape) != 4 or len(filter_value.shape) != 4:
-            raise ValueError(f"{op_name} currently supports rank-4 tensors only")
-        if input_value.dtype != int8 or filter_value.dtype != int8:
-            raise TypeError(f"{op_name} currently requires int8 inputs")
-        if depthwise:
-            if filter_value.shape[2] != 1:
-                raise ValueError("xt.depthwise_conv2d requires filter dim 2 to be 1")
-            if filter_value.shape[3] != input_value.shape[3]:
-                raise ValueError("xt.depthwise_conv2d requires matching channel counts")
-            out_channels = input_value.shape[3]
-        else:
-            if input_value.shape[3] != filter_value.shape[2]:
-                raise ValueError("xt.conv2d requires input/filter channels to match")
-            out_channels = filter_value.shape[3]
-
-        out_h = self._compute_conv_output_dim(
-            input_value.shape[1],
-            filter_value.shape[0],
-            pad[0],
-            pad[2],
-            stride[0],
-            dilation[0],
-        )
-        out_w = self._compute_conv_output_dim(
-            input_value.shape[2],
-            filter_value.shape[1],
-            pad[1],
-            pad[3],
-            stride[1],
-            dilation[1],
-        )
-        result = TensorValue(
-            ssa_name=self._next_name("conv" if not depthwise else "dwconv"),
-            shape=(input_value.shape[0], out_h, out_w, out_channels),
-            dtype=float32,
-        )
-        self.operations.append(
-            AttrOp(
-                op_name=op_name,
-                result=result,
-                operands=(input_value, filter_value),
-                attrs=(("pad", pad), ("stride", stride), ("dilation", dilation)),
-            )
-        )
-        return result
-
-    @staticmethod
-    def _compute_conv_output_dim(
-        input_size: int,
-        kernel_size: int,
-        pad_before: int,
-        pad_after: int,
-        stride: int,
-        dilation: int,
-    ) -> int:
-        effective_kernel = dilation * (kernel_size - 1) + 1
-        numerator = input_size + pad_before + pad_after - effective_kernel
-        if numerator < 0:
-            raise ValueError("invalid convolution configuration")
-        return numerator // stride + 1
-
     @staticmethod
     def _format_memref_type(array: Array) -> str:
         dims = "x".join(str(dim) for dim in array.shape)
@@ -860,6 +844,31 @@ def load(
     if _ACTIVE_TRACE is None:
         raise RuntimeError("xt.load may only be used while converting a kernel")
     return _ACTIVE_TRACE.load(array, index, shape, shared)
+
+
+def load_conv2d(
+    array: KernelArg,
+    filter_value: TensorValue,
+    *,
+    index: tuple[BlockId | int, ...],
+    shape: tuple[int, ...],
+    group: int = 1,
+    pad: tuple[int, int, int, int],
+    stride: tuple[int, int],
+    dilation: tuple[int, int],
+) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.load_conv2d may only be used while converting a kernel")
+    return _ACTIVE_TRACE.load_conv2d(
+        array,
+        filter_value,
+        index,
+        shape,
+        group=group,
+        pad=pad,
+        stride=stride,
+        dilation=dilation,
+    )
 
 
 def max(input_value: TensorValue, axis: int = -1) -> TensorValue:
@@ -934,6 +943,14 @@ def mul(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
     return _ACTIVE_TRACE.mul(lhs, rhs)
 
 
+def truediv(lhs: TensorValue, rhs: object) -> TensorValue:
+    if _ACTIVE_TRACE is None:
+        raise RuntimeError("xt.truediv may only be used while converting a kernel")
+    if not isinstance(rhs, TensorValue):
+        raise TypeError("xt.truediv currently requires a tensor rhs")
+    return _ACTIVE_TRACE.truediv(lhs, rhs)
+
+
 def add(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
     if _ACTIVE_TRACE is None:
         raise RuntimeError("xt.add may only be used while converting a kernel")
@@ -968,38 +985,6 @@ def mma(lhs: TensorValue, rhs: TensorValue, acc: TensorValue) -> TensorValue:
     if _ACTIVE_TRACE is None:
         raise RuntimeError("xt.mma may only be used while converting a kernel")
     return _ACTIVE_TRACE.mma(lhs, rhs, acc)
-
-
-def conv2d(
-    input_value: TensorValue,
-    filter_value: TensorValue,
-    *,
-    pad: tuple[int, int, int, int],
-    stride: tuple[int, int],
-    dilation: tuple[int, int],
-) -> TensorValue:
-    if _ACTIVE_TRACE is None:
-        raise RuntimeError("xt.conv2d may only be used while converting a kernel")
-    return _ACTIVE_TRACE.conv2d(
-        input_value, filter_value, pad=pad, stride=stride, dilation=dilation
-    )
-
-
-def depthwise_conv2d(
-    input_value: TensorValue,
-    filter_value: TensorValue,
-    *,
-    pad: tuple[int, int, int, int],
-    stride: tuple[int, int],
-    dilation: tuple[int, int],
-) -> TensorValue:
-    if _ACTIVE_TRACE is None:
-        raise RuntimeError(
-            "xt.depthwise_conv2d may only be used while converting a kernel"
-        )
-    return _ACTIVE_TRACE.depthwise_conv2d(
-        input_value, filter_value, pad=pad, stride=stride, dilation=dilation
-    )
 
 
 def store(
