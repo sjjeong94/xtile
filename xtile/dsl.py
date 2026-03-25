@@ -529,7 +529,7 @@ class TraceContext:
                 lines.append(
                     "  "
                     f"{op.result.ssa_name} = xt.load_conv2d(%{arg_names[op.array.index]}, "
-                    f"{op.filter.ssa_name}, {self._format_index(op.index)}) "
+                    f"{op.filter.ssa_name}, {', '.join(self._format_index(op.index).split(', '))}) "
                     "{"
                     f"dilation = array<i64: {', '.join(str(v) for v in op.dilation)}>, "
                     f"group = {op.group} : i64, "

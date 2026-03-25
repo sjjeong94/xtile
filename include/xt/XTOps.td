@@ -33,7 +33,10 @@ def XT_LoadConv2DOp : XT_Op<"load_conv2d"> {
   let summary = "load a tensor tile from a memref and apply conv2d with a filter tensor";
   let arguments = (ins XT_RankedMemRef:$source,
                        XT_RankedTensor:$filter,
-                       Variadic<XT_AnyCoord>:$coords,
+                       XT_AnyCoord:$idx_b,
+                       XT_AnyCoord:$idx_h,
+                       XT_AnyCoord:$idx_w,
+                       XT_AnyCoord:$idx_c,
                        OptionalAttr<I64Attr>:$group,
                        DenseI64ArrayAttr:$pad,
                        DenseI64ArrayAttr:$stride,
@@ -41,7 +44,7 @@ def XT_LoadConv2DOp : XT_Op<"load_conv2d"> {
   let results = (outs XT_RankedTensor:$result);
   let hasVerifier = 1;
   let assemblyFormat =
-      "`(` $source `,` $filter `,` $coords `)` attr-dict `:` functional-type(operands, results)";
+      "`(` $source `,` $filter `,` $idx_b `,` $idx_h `,` $idx_w `,` $idx_c `)` attr-dict `:` functional-type(operands, results)";
 }
 
 def XT_StoreOp : XT_Op<"store"> {

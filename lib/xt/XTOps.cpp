@@ -54,8 +54,6 @@ LogicalResult LoadConv2DOp::verify() {
   if (memRefType.getRank() != 4 || filterType.getRank() != 4 ||
       resultType.getRank() != 4)
     return emitOpError("requires rank-4 source, filter, and result types");
-  if (static_cast<int64_t>(getCoords().size()) != memRefType.getRank())
-    return emitOpError("coordinate count must match source memref rank");
   if (getPadAttr().size() != 4)
     return emitOpError("pad attribute must have exactly 4 entries");
   if (getStrideAttr().size() != 2)

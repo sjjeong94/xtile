@@ -100,6 +100,47 @@ static FailureOr<DenseI64ArrayAttr> extractConstantStarts(MLIRContext *context,
   return DenseI64ArrayAttr::get(context, starts);
 }
 
+struct Conv2DSpatialSlice {
+  int64_t loadStart;
+  int64_t loadSize;
+  int64_t convPadBefore;
+  int64_t convPadAfter;
+};
+
+static FailureOr<Conv2DSpatialSlice>
+computeConv2DSpatialSlice(int64_t sourceDim, int64_t resultIndex,
+                          int64_t resultDim, int64_t kernelDim,
+                          int64_t padBefore, int64_t padAfter, int64_t stride,
+                          int64_t dilation) {
+  if (sourceDim < 0 || resultIndex < 0 || resultDim < 0 || kernelDim <= 0 ||
+      padBefore < 0 || padAfter < 0 || stride <= 0 || dilation <= 0)
+    return failure();
+
+  int64_t resultStart = resultIndex * resultDim;
+  int64_t receptiveField =
+      (resultDim - 1) * stride + dilation * (kernelDim - 1) + 1;
+  int64_t idealStart = resultStart * stride - padBefore;
+  int64_t idealEnd = idealStart + receptiveField;
+  int64_t loadStart = std::max<int64_t>(idealStart, 0);
+  int64_t convPadBefore = loadStart - idealStart;
+  int64_t unclampedEnd = loadStart + (receptiveField - convPadBefore);
+  int64_t loadEnd = std::min<int64_t>(unclampedEnd, sourceDim);
+  int64_t loadSize = loadEnd - loadStart;
+  int64_t convPadAfter = idealEnd - loadEnd;
+  (void)padAfter;
+  if (loadSize <= 0)
+    return failure();
+  if (convPadAfter < 0)
+    return failure();
+
+  return Conv2DSpatialSlice{
+      loadStart,
+      loadSize,
+      convPadBefore,
+      convPadAfter,
+  };
+}
+
 template <typename OpTy>
 struct BinaryOpToNovaPattern : OpRewritePattern<OpTy> {
   using OpRewritePattern<OpTy>::OpRewritePattern;
@@ -309,6 +350,92 @@ struct LoadOpToNovaPattern : OpRewritePattern<xt::LoadOp> {
   }
 };
 
+struct LoadConv2DOpToNovaPattern : OpRewritePattern<xt::LoadConv2DOp> {
+  using OpRewritePattern<xt::LoadConv2DOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(xt::LoadConv2DOp op,
+                                PatternRewriter &rewriter) const override {
+    auto memRefType = dyn_cast<MemRefType>(op.getSource().getType());
+    auto filterType = dyn_cast<RankedTensorType>(op.getFilter().getType());
+    auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
+    if (!memRefType || !filterType || !resultType || !memRefType.hasStaticShape() ||
+        !filterType.hasStaticShape() || !resultType.hasStaticShape())
+      return failure();
+
+    if (memRefType.getRank() != 4 || filterType.getRank() != 4 ||
+        resultType.getRank() != 4)
+      return failure();
+
+    FailureOr<int64_t> idxB = extractConstantInt(op.getIdxB());
+    FailureOr<int64_t> idxH = extractConstantInt(op.getIdxH());
+    FailureOr<int64_t> idxW = extractConstantInt(op.getIdxW());
+    FailureOr<int64_t> idxC = extractConstantInt(op.getIdxC());
+    if (failed(idxB) || failed(idxH) || failed(idxW) || failed(idxC))
+      return failure();
+
+    ArrayRef<int64_t> pad = op.getPad();
+    ArrayRef<int64_t> stride = op.getStride();
+    ArrayRef<int64_t> dilation = op.getDilation();
+    if (pad.size() != 4 || stride.size() != 2 || dilation.size() != 2)
+      return failure();
+
+    FailureOr<Conv2DSpatialSlice> heightSlice = computeConv2DSpatialSlice(
+        memRefType.getDimSize(1), *idxH, resultType.getDimSize(1),
+        filterType.getDimSize(0), pad[0], pad[2], stride[0], dilation[0]);
+    FailureOr<Conv2DSpatialSlice> widthSlice = computeConv2DSpatialSlice(
+        memRefType.getDimSize(2), *idxW, resultType.getDimSize(2),
+        filterType.getDimSize(1), pad[1], pad[3], stride[1], dilation[1]);
+    if (failed(heightSlice) || failed(widthSlice))
+      return failure();
+
+    int64_t inputChannels = filterType.getDimSize(2);
+    int64_t outputChannels = resultType.getDimSize(3);
+    if (inputChannels <= 0 || outputChannels != filterType.getDimSize(3))
+      return failure();
+
+    SmallVector<int64_t> loadStart = {
+        *idxB * resultType.getDimSize(0),
+        heightSlice->loadStart,
+        widthSlice->loadStart,
+        *idxC * inputChannels,
+    };
+    SmallVector<int64_t> loadShape = {
+        resultType.getDimSize(0),
+        heightSlice->loadSize,
+        widthSlice->loadSize,
+        inputChannels,
+    };
+    auto loadType = RankedTensorType::get(loadShape, memRefType.getElementType());
+
+    OperationState loadState(op.getLoc(), "nova.load");
+    loadState.addOperands(op.getSource());
+    loadState.addTypes(loadType);
+    loadState.addAttribute("start",
+                           DenseI64ArrayAttr::get(rewriter.getContext(), loadStart));
+    Operation *loadOp = rewriter.create(loadState);
+
+    SmallVector<int64_t> convPad = {
+        heightSlice->convPadBefore,
+        widthSlice->convPadBefore,
+        heightSlice->convPadAfter,
+        widthSlice->convPadAfter,
+    };
+    OperationState convState(op.getLoc(), "nova.conv2d");
+    convState.addOperands({loadOp->getResult(0), op.getFilter()});
+    convState.addTypes(resultType);
+    convState.addAttribute("pad",
+                           DenseI64ArrayAttr::get(rewriter.getContext(), convPad));
+    convState.addAttribute("stride", op.getStrideAttr());
+    convState.addAttribute("dilation", op.getDilationAttr());
+    if (auto group = op.getGroupAttr())
+      convState.addAttribute("group", group);
+
+    Operation *convOp = rewriter.create(convState);
+    rewriter.replaceOp(op, convOp->getResults());
+    return success();
+  }
+};
+
 struct StoreOpToNovaPattern : OpRewritePattern<xt::StoreOp> {
   using OpRewritePattern<xt::StoreOp>::OpRewritePattern;
 
@@ -392,6 +519,7 @@ public:
                  BinaryOpToNovaPattern<xt::MulOp>,
                  BinaryOpToNovaPattern<xt::SubOp>,
                  LoadOpToNovaPattern,
+                 LoadConv2DOpToNovaPattern,
                  MatmulOpToNovaPattern,
                  PermuteOpToNovaPattern,
                  UnaryTensorOpToNovaPattern<xt::ExpOp>,
