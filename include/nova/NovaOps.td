@@ -78,7 +78,7 @@ class Nova_BinaryTensorOp<string mnemonic, string summaryText> :
                        F32Attr:$rhs_b);
   let results = (outs Nova_RankedTensor:$result);
   let assemblyFormat =
-      "$mode $lhs `,` $rhs  attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
+      "$mode $lhs `,` $rhs `lhs` $lhs_a $lhs_b `rhs` $rhs_a $rhs_b attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
 }
 
 def Nova_ElementwiseOp : Nova_BinaryTensorOp<

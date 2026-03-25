@@ -19,7 +19,7 @@ class Nova_Attr<string name, string attrMnemonic, list<Trait> traits = []> :
   let mnemonic = attrMnemonic;
 }
 
-def Nova_TensorLayoutAttr : Nova_Attr<"TensorLayout", "tensor_layout"> {
+def Nova_TensorLayoutAttr : Nova_Attr<"TensorLayout", "layout"> {
   let summary = "Tensor encoding metadata for Nova tensors";
   let description = [{
     Captures optional bank and slice metadata and the target memory space

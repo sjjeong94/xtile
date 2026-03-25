@@ -321,6 +321,25 @@ static void createX1Broadcast(OpBuilder &builder, nova::BroadcastOp op,
       op.getLhsBAttr(), op.getRhsAAttr(), op.getRhsBAttr(), op.getModeAttr());
 }
 
+static void createX1Elementwise(OpBuilder &builder, nova::ElementwiseOp op,
+                                const TensorLayout &lhsLayout,
+                                const TensorLayout &rhsLayout,
+                                const TensorLayout &resultLayout) {
+  builder.create<x1::ElementwiseOp>(
+      op.getLoc(), builder.getI64IntegerAttr(getLaneBank(lhsLayout, 0)),
+      builder.getI64IntegerAttr(
+          getLaneBank(lhsLayout, resultLayout.threadCount - 1)),
+      builder.getI64IntegerAttr(getLaneBank(rhsLayout, 0)),
+      builder.getI64IntegerAttr(
+          getLaneBank(rhsLayout, resultLayout.threadCount - 1)),
+      builder.getI64IntegerAttr(getFirstBank(resultLayout)),
+      builder.getI64IntegerAttr(getLastBank(resultLayout)),
+      getI64ArrayAttr(builder,
+                      {getMatrixRowsPerLane(lhsLayout), resultLayout.shape[1]}),
+      op.getLhsAAttr(), op.getLhsBAttr(), op.getRhsAAttr(), op.getRhsBAttr(),
+      op.getModeAttr());
+}
+
 template <typename X1Op, typename NovaOp>
 static void createX1UnaryBankCommand(OpBuilder &builder, NovaOp op,
                                      const TensorLayout &inputLayout,
@@ -447,6 +466,29 @@ public:
         createX1Broadcast(builder, broadcast, lhsIt->second, rhsIt->second,
                           *resultLayout);
         layouts[broadcast.getResult()] = *resultLayout;
+        eraseOps.push_back(operation);
+        continue;
+      }
+
+      if (auto elementwise = dyn_cast<nova::ElementwiseOp>(operation)) {
+        auto lhsIt = layouts.find(elementwise.getLhs());
+        auto rhsIt = layouts.find(elementwise.getRhs());
+        if (lhsIt == layouts.end() || rhsIt == layouts.end()) {
+          elementwise.emitOpError("requires lowered input metadata");
+          signalPassFailure();
+          return;
+        }
+
+        FailureOr<TensorLayout> resultLayout = propagateBinaryLayout(
+            elementwise, elementwise.getResult().getType(), lhsIt->second,
+            rhsIt->second);
+        if (failed(resultLayout)) {
+          signalPassFailure();
+          return;
+        }
+        createX1Elementwise(builder, elementwise, lhsIt->second, rhsIt->second,
+                            *resultLayout);
+        layouts[elementwise.getResult()] = *resultLayout;
         eraseOps.push_back(operation);
         continue;
       }

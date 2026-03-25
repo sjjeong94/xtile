@@ -98,9 +98,9 @@ module {
 // CHECK-LABEL: func.func @reduce_axis0
 // CHECK: nova.reduce 0 %arg0 {axis = 0 : i64} : tensor<16x16xf32> -> tensor<1x16xf32>
 // CHECK-LABEL: func.func @broadcast_sub
-// CHECK: nova.broadcast 3 %arg0, %arg1 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<16x16xf32>, tensor<16x1xf32> -> tensor<16x16xf32>
+// CHECK: nova.broadcast 3 %arg0, %arg1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<16x16xf32>, tensor<16x1xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @elementwise_mul
-// CHECK: nova.elementwise 2 %arg0, %arg1 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<16x16xf32>, tensor<16x16xf32> -> tensor<16x16xf32>
+// CHECK: nova.elementwise 2 %arg0, %arg1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<16x16xf32>, tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @square_mul
 // CHECK: nova.square %arg0 : tensor<16x16xf32> -> tensor<16x16xf32>
 // CHECK-LABEL: func.func @rsqrt

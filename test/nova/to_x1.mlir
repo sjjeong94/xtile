@@ -14,7 +14,7 @@ func.func @rowwise_softmax(%arg0: memref<128x64xf32>,
   %0 = nova.load %arg0 [0, 0] : memref<128x64xf32> -> tensor<64x64xf32, {bank0 = 0 : i64, bank1 = 1 : i64, space = 3 : i64, threading = 32 : i64}>
   %1 = nova.reduce 1 %0 {axis = 1 : i64} : tensor<64x64xf32, {bank0 = 0 : i64, bank1 = 1 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x1xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %2 = nova.broadcast 3 %0, %1 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 0 : i64, bank1 = 1 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 4 : i64, bank1 = 5 : i64, space = 3 : i64, threading = 32 : i64}>
+  %2 = nova.broadcast 3 %0, %1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 0 : i64, bank1 = 1 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 4 : i64, bank1 = 5 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
   %3 = nova.exp %2 : tensor<64x64xf32, {bank0 = 4 : i64, bank1 = 5 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 2 : i64, space = 3 : i64}>
   nova.barrier 0
@@ -22,13 +22,13 @@ func.func @rowwise_softmax(%arg0: memref<128x64xf32>,
   nova.barrier 0
   %5 = nova.reciprocal %4 : tensor<64x1xf32, {bank0 = 4 : i64, space = 3 : i64}> -> tensor<64x1xf32, {bank0 = 6 : i64, space = 3 : i64}>
   nova.barrier 0
-  %6 = nova.broadcast 2 %3, %5 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 2 : i64, space = 3 : i64}>, tensor<64x1xf32, {bank0 = 6 : i64, space = 3 : i64}> -> tensor<64x64xf32, {bank0 = 4 : i64, space = 3 : i64}>
+  %6 = nova.broadcast 2 %3, %5 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 2 : i64, space = 3 : i64}>, tensor<64x1xf32, {bank0 = 6 : i64, space = 3 : i64}> -> tensor<64x64xf32, {bank0 = 4 : i64, space = 3 : i64}>
   nova.barrier 0
   nova.store %6, %arg1 [0, 0] : (tensor<64x64xf32, {bank0 = 4 : i64, space = 3 : i64}>, memref<128x64xf32>) -> ()
   %7 = nova.load %arg0 [64, 0] : memref<128x64xf32> -> tensor<64x64xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}>
   %8 = nova.reduce 1 %7 {axis = 1 : i64} : tensor<64x64xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x1xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %9 = nova.broadcast 3 %7, %8 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
+  %9 = nova.broadcast 3 %7, %8 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
   %10 = nova.exp %9 : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 2 : i64, space = 3 : i64}>
   nova.barrier 0
@@ -36,7 +36,7 @@ func.func @rowwise_softmax(%arg0: memref<128x64xf32>,
   nova.barrier 0
   %12 = nova.reciprocal %11 : tensor<64x1xf32, {bank0 = 6 : i64, space = 3 : i64}> -> tensor<64x1xf32, {bank0 = 8 : i64, space = 3 : i64}>
   nova.barrier 0
-  %13 = nova.broadcast 2 %10, %12 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 2 : i64, space = 3 : i64}>, tensor<64x1xf32, {bank0 = 8 : i64, space = 3 : i64}> -> tensor<64x64xf32, {bank0 = 6 : i64, space = 3 : i64}>
+  %13 = nova.broadcast 2 %10, %12 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 2 : i64, space = 3 : i64}>, tensor<64x1xf32, {bank0 = 8 : i64, space = 3 : i64}> -> tensor<64x64xf32, {bank0 = 6 : i64, space = 3 : i64}>
   nova.barrier 0
   nova.store %13, %arg1 [64, 0] : (tensor<64x64xf32, {bank0 = 6 : i64, space = 3 : i64}>, memref<128x64xf32>) -> ()
   nova.barrier 1
@@ -86,7 +86,7 @@ func.func @rowwise_layernorm(%arg0: memref<128x64xf32>, %arg1: memref<1x64xf32>,
   %2 = nova.load %arg2 [0, 0] {shared = 1 : i64} : memref<1x64xf32> -> tensor<1x64xf32, {bank0 = 4 : i64, space = 3 : i64, threading = 1 : i64}>
   %3 = nova.reduce 0 %0 {axis = 1 : i64} : tensor<64x64xf32, {bank0 = 0 : i64, bank1 = 1 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x1xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %4 = nova.broadcast 3 %0, %3 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.562500e-02 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 0 : i64, bank1 = 1 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
+  %4 = nova.broadcast 3 %0, %3 lhs 1.000000e+00 0.000000e+00 rhs 1.562500e-02 0.000000e+00 : tensor<64x64xf32, {bank0 = 0 : i64, bank1 = 1 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
   %5 = nova.square %4 : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
@@ -96,17 +96,17 @@ func.func @rowwise_layernorm(%arg0: memref<128x64xf32>, %arg1: memref<1x64xf32>,
   nova.barrier 0
   %8 = nova.rsqrt %7 : tensor<64x1xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %9 = nova.broadcast 2 %4, %8 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>
+  %9 = nova.broadcast 2 %4, %8 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %10 = nova.broadcast 2 %9, %1 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<1x64xf32, {bank0 = 2 : i64, space = 3 : i64, threading = 1 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
+  %10 = nova.broadcast 2 %9, %1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<1x64xf32, {bank0 = 2 : i64, space = 3 : i64, threading = 1 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %11 = nova.broadcast 1 %10, %2 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<1x64xf32, {bank0 = 4 : i64, space = 3 : i64, threading = 1 : i64}> -> tensor<64x64xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>
+  %11 = nova.broadcast 1 %10, %2 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<1x64xf32, {bank0 = 4 : i64, space = 3 : i64, threading = 1 : i64}> -> tensor<64x64xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
   nova.store %11, %arg3 [0, 0] : (tensor<64x64xf32, {bank0 = 6 : i64, bank1 = 7 : i64, space = 3 : i64, threading = 32 : i64}>, memref<128x64xf32>) -> ()
   %12 = nova.load %arg0 [64, 0] : memref<128x64xf32> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
   %13 = nova.reduce 0 %12 {axis = 1 : i64} : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %14 = nova.broadcast 3 %12, %13 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.562500e-02 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 12 : i64, bank1 = 13 : i64, space = 3 : i64, threading = 32 : i64}>
+  %14 = nova.broadcast 3 %12, %13 lhs 1.000000e+00 0.000000e+00 rhs 1.562500e-02 0.000000e+00 : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 12 : i64, bank1 = 13 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
   %15 = nova.square %14 : tensor<64x64xf32, {bank0 = 12 : i64, bank1 = 13 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
@@ -116,11 +116,11 @@ func.func @rowwise_layernorm(%arg0: memref<128x64xf32>, %arg1: memref<1x64xf32>,
   nova.barrier 0
   %18 = nova.rsqrt %17 : tensor<64x1xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %19 = nova.broadcast 2 %14, %18 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 12 : i64, bank1 = 13 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
+  %19 = nova.broadcast 2 %14, %18 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 12 : i64, bank1 = 13 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<64x1xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}> -> tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %20 = nova.broadcast 2 %19, %1 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<1x64xf32, {bank0 = 2 : i64, space = 3 : i64, threading = 1 : i64}> -> tensor<64x64xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}>
+  %20 = nova.broadcast 2 %19, %1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 8 : i64, bank1 = 9 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<1x64xf32, {bank0 = 2 : i64, space = 3 : i64, threading = 1 : i64}> -> tensor<64x64xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
-  %21 = nova.broadcast 1 %20, %2 {lhs_a = 1.000000e+00 : f32, lhs_b = 0.000000e+00 : f32, rhs_a = 1.000000e+00 : f32, rhs_b = 0.000000e+00 : f32} : tensor<64x64xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<1x64xf32, {bank0 = 4 : i64, space = 3 : i64, threading = 1 : i64}> -> tensor<64x64xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}>
+  %21 = nova.broadcast 1 %20, %2 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x64xf32, {bank0 = 10 : i64, bank1 = 11 : i64, space = 3 : i64, threading = 32 : i64}>, tensor<1x64xf32, {bank0 = 4 : i64, space = 3 : i64, threading = 1 : i64}> -> tensor<64x64xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}>
   nova.barrier 0
   nova.store %21, %arg3 [64, 0] : (tensor<64x64xf32, {bank0 = 2 : i64, bank1 = 3 : i64, space = 3 : i64, threading = 32 : i64}>, memref<128x64xf32>) -> ()
   nova.barrier 1
@@ -135,6 +135,15 @@ func.func @column_reduce(%arg0: memref<64x64xf32>) {
 
 func.func @legacy_split_bank_inference(%arg0: memref<128x128xf32>) {
   %0 = nova.load %arg0 [0, 0] : memref<128x128xf32> -> tensor<64x128xf32, {bank0 = 0 : i64, shape0 = array<i64: 32, 128>, shape1 = array<i64: 32, 128>, space = 3 : i64, start0 = array<i64: 0, 0>, start1 = array<i64: 32, 0>}>
+  return
+}
+
+func.func @elementwise_add(%arg0: memref<128x128xf32>, %arg1: memref<128x128xf32>,
+                           %arg2: memref<128x128xf32>) attributes {xt.double_buffering = 1 : i32, xt.grid = array<i32: 2, 1, 1>} {
+  %0 = nova.load %arg0 [0, 0] : memref<128x128xf32> -> tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128], bank0 = 0, bank1 = 1, space = 3>>
+  %1 = nova.load %arg1 [0, 0] : memref<128x128xf32> -> tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128], bank0 = 2, bank1 = 3, space = 3>>
+  %2 = nova.elementwise 1 %0, %1 lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00 : tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128], bank0 = 0, bank1 = 1, space = 3>>, tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128], bank0 = 2, bank1 = 3, space = 3>> -> tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128], bank0 = 4, bank1 = 5, space = 3>>
+  nova.store %2, %arg2 [0, 0] : (tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128], bank0 = 4, bank1 = 5, space = 3>>, memref<128x128xf32>) -> ()
   return
 }
 
@@ -197,4 +206,14 @@ func.func @legacy_split_bank_inference(%arg0: memref<128x128xf32>) {
 // CHECK-LABEL: func.func @legacy_split_bank_inference
 // CHECK: x1.load %arg0 0 [0, 0] [32, 128] space 3 thread 0 : memref<128x128xf32>
 // CHECK-NEXT: x1.load %arg0 1 [32, 0] [32, 128] space 3 thread 1 : memref<128x128xf32>
+// CHECK-NEXT: return
+
+// CHECK-LABEL: func.func @elementwise_add
+// CHECK-NEXT: x1.load %arg0 0 [0, 0] [32, 128] space 3 thread 0 : memref<128x128xf32>
+// CHECK-NEXT: x1.load %arg0 1 [32, 0] [32, 128] space 3 thread 1 : memref<128x128xf32>
+// CHECK-NEXT: x1.load %arg1 2 [0, 0] [32, 128] space 3 thread 0 : memref<128x128xf32>
+// CHECK-NEXT: x1.load %arg1 3 [32, 0] [32, 128] space 3 thread 1 : memref<128x128xf32>
+// CHECK-NEXT: x1.elementwise 1 lhs 0 1 rhs 2 3 out 4 5 [32, 128] lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
+// CHECK-NEXT: x1.store %arg2 4 [0, 0] [32, 128] space 3 thread 0 : memref<128x128xf32>
+// CHECK-NEXT: x1.store %arg2 5 [32, 0] [32, 128] space 3 thread 1 : memref<128x128xf32>
 // CHECK-NEXT: return

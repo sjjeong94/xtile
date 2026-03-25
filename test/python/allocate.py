@@ -30,9 +30,9 @@ def main():
         raise AssertionError("xt.nova_allocate should return the original module object")
 
     module_asm = xt._module_asm(module)
-    if "#nova.tensor_layout<bank0 = 0, space = 3>" not in module_asm:
+    if "#nova.layout<bank0 = 0, space = 3>" not in module_asm:
         raise AssertionError(f"expected allocated bank annotation in IR:\n{module_asm}")
-    if "#nova.tensor_layout<bank0 = 2, space = 3>" not in module_asm:
+    if "#nova.layout<bank0 = 2, space = 3>" not in module_asm:
         raise AssertionError(f"expected keep_alive to extend liveness into a later bank assignment:\n{module_asm}")
     if "space = 3" not in module_asm:
         raise AssertionError(f"expected allocated space annotation in IR:\n{module_asm}")

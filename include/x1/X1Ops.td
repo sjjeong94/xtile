@@ -91,6 +91,23 @@ def X1_BroadcastOp : X1_Op<"broadcast"> {
   let assemblyFormat = "$mode `lhs` $lhs0 $lhs1 `rhs` $rhs0 $rhs1 `out` $out0 $out1 $shape `axis` $axis `lhs` $lhs_a $lhs_b `rhs` $rhs_a $rhs_b attr-dict";
 }
 
+def X1_ElementwiseOp : X1_Op<"elementwise"> {
+  let summary = "x1 elementwise command";
+  let arguments = (ins I64Attr:$lhs0,
+                       I64Attr:$lhs1,
+                       I64Attr:$rhs0,
+                       I64Attr:$rhs1,
+                       I64Attr:$out0,
+                       I64Attr:$out1,
+                       DenseI64ArrayAttr:$shape,
+                       F32Attr:$lhs_a,
+                       F32Attr:$lhs_b,
+                       F32Attr:$rhs_a,
+                       F32Attr:$rhs_b,
+                       I32Attr:$mode);
+  let assemblyFormat = "$mode `lhs` $lhs0 $lhs1 `rhs` $rhs0 $rhs1 `out` $out0 $out1 $shape `lhs` $lhs_a $lhs_b `rhs` $rhs_a $rhs_b attr-dict";
+}
+
 def X1_ExpOp : X1_UnaryBankCommandOp<
     "exp", "x1 exp command">;
 

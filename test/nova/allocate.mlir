@@ -38,40 +38,40 @@ func.func @allocate_space_assignment(%lhs_src: memref<16x32xf32>, %rhs_src: memr
   func.return
 }
 
-func.func @allocate_split_banks(%arg0: tensor<64x128xf32, #nova.tensor_layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128]>>) {
-  %0 = nova.square %arg0 : tensor<64x128xf32, #nova.tensor_layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128]>> -> tensor<64x128xf32, #nova.tensor_layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128]>>
+func.func @allocate_split_banks(%arg0: tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128]>>) {
+  %0 = nova.square %arg0 : tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128]>> -> tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128]>>
   func.return
 }
 
 // CHECK-LABEL: func.func @allocate_basic
-// CHECK: %[[LOAD0:.*]] = nova.load %arg0 [0, 0] : memref<64x16xf32> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>>
-// CHECK: %[[SQUARE0:.*]] = nova.square %[[LOAD0]] : tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 1, space = 3>>
-// CHECK: nova.store %[[SQUARE0]], %arg1 [0, 0] : (tensor<16x16xf32, #nova.tensor_layout<bank0 = 1, space = 3>>, memref<64x16xf32>) -> ()
-// CHECK: %[[LOAD1:.*]] = nova.load %arg0 [1, 0] : memref<64x16xf32> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>>
-// CHECK: %[[SQUARE1:.*]] = nova.square %[[LOAD1]] : tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 1, space = 3>>
+// CHECK: %[[LOAD0:.*]] = nova.load %arg0 [0, 0] : memref<64x16xf32> -> tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>>
+// CHECK: %[[SQUARE0:.*]] = nova.square %[[LOAD0]] : tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>> -> tensor<16x16xf32, #nova.layout<bank0 = 1, space = 3>>
+// CHECK: nova.store %[[SQUARE0]], %arg1 [0, 0] : (tensor<16x16xf32, #nova.layout<bank0 = 1, space = 3>>, memref<64x16xf32>) -> ()
+// CHECK: %[[LOAD1:.*]] = nova.load %arg0 [1, 0] : memref<64x16xf32> -> tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>>
+// CHECK: %[[SQUARE1:.*]] = nova.square %[[LOAD1]] : tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>> -> tensor<16x16xf32, #nova.layout<bank0 = 1, space = 3>>
 // CHECK: %[[SCALAR:.*]] = arith.constant dense<1.000000e+00> : tensor<1x1xf32>
-// CHECK: nova.store %[[SQUARE1]], %arg1 [1, 0] : (tensor<16x16xf32, #nova.tensor_layout<bank0 = 1, space = 3>>, memref<64x16xf32>) -> ()
+// CHECK: nova.store %[[SQUARE1]], %arg1 [1, 0] : (tensor<16x16xf32, #nova.layout<bank0 = 1, space = 3>>, memref<64x16xf32>) -> ()
 // CHECK-NOT: nova.free(
 // CHECK-LABEL: func.func @allocate_keep_alive_extends_liveness
-// CHECK: %[[KL0:.*]] = nova.load %arg0 [0, 0] : memref<64x16xf32> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>>
-// CHECK: %[[KS0:.*]] = nova.square %[[KL0]] : tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 1, space = 3>>
-// CHECK: nova.store %[[KS0]], %arg1 [0, 0] : (tensor<16x16xf32, #nova.tensor_layout<bank0 = 1, space = 3>>, memref<64x16xf32>) -> ()
-// CHECK: %[[KL1:.*]] = nova.load %arg0 [1, 0] : memref<64x16xf32> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>>
-// CHECK: %[[KS1:.*]] = nova.square %[[KL1]] : tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 2, space = 3>>
-// CHECK: nova.store %[[KS1]], %arg1 [1, 0] : (tensor<16x16xf32, #nova.tensor_layout<bank0 = 2, space = 3>>, memref<64x16xf32>) -> ()
+// CHECK: %[[KL0:.*]] = nova.load %arg0 [0, 0] : memref<64x16xf32> -> tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>>
+// CHECK: %[[KS0:.*]] = nova.square %[[KL0]] : tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>> -> tensor<16x16xf32, #nova.layout<bank0 = 1, space = 3>>
+// CHECK: nova.store %[[KS0]], %arg1 [0, 0] : (tensor<16x16xf32, #nova.layout<bank0 = 1, space = 3>>, memref<64x16xf32>) -> ()
+// CHECK: %[[KL1:.*]] = nova.load %arg0 [1, 0] : memref<64x16xf32> -> tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>>
+// CHECK: %[[KS1:.*]] = nova.square %[[KL1]] : tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>> -> tensor<16x16xf32, #nova.layout<bank0 = 2, space = 3>>
+// CHECK: nova.store %[[KS1]], %arg1 [1, 0] : (tensor<16x16xf32, #nova.layout<bank0 = 2, space = 3>>, memref<64x16xf32>) -> ()
 // CHECK-NOT: nova.keep_alive 
 // CHECK-LABEL: func.func @allocate_multi_bank
-// CHECK: %[[LARGE:.*]] = nova.square %arg0 : tensor<70000xf32> -> tensor<70000xf32, #nova.tensor_layout<bank0 = 0, space = 3>>
-// CHECK: %[[SMALL:.*]] = nova.square %arg1 : tensor<16x16xf32> -> tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>>
-// CHECK: nova.store %[[SMALL]], %arg2 [0, 0] : (tensor<16x16xf32, #nova.tensor_layout<bank0 = 0, space = 3>>, memref<16x16xf32>) -> ()
+// CHECK: %[[LARGE:.*]] = nova.square %arg0 : tensor<70000xf32> -> tensor<70000xf32, #nova.layout<bank0 = 0, space = 3>>
+// CHECK: %[[SMALL:.*]] = nova.square %arg1 : tensor<16x16xf32> -> tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>>
+// CHECK: nova.store %[[SMALL]], %arg2 [0, 0] : (tensor<16x16xf32, #nova.layout<bank0 = 0, space = 3>>, memref<16x16xf32>) -> ()
 // CHECK-NOT: nova.free(
 // CHECK-LABEL: func.func @allocate_space_assignment
-// CHECK: %[[LHS:.*]] = nova.load %arg0 [0, 0] : memref<16x32xf32> -> tensor<16x32xf32, #nova.tensor_layout<bank0 = 0, space = 3>>
-// CHECK: %[[RHS:.*]] = nova.load %arg1 [0, 0] : memref<32x8xf32> -> tensor<32x8xf32, #nova.tensor_layout<bank0 = 1, space = 3>>
-// CHECK: %[[SCALE:.*]] = nova.load %arg2 [0, 0] : memref<16x8xf32> -> tensor<16x8xf32, #nova.tensor_layout<bank0 = 0, space = 4>>
-// CHECK: %[[BIAS:.*]] = nova.load %arg3 [0, 0] : memref<16x8xf32> -> tensor<16x8xf32, #nova.tensor_layout<bank0 = 0, space = 5>>
-// CHECK: %[[RESULT:.*]] = nova.matmul %[[LHS]], %[[RHS]], %[[SCALE]], %[[BIAS]] : tensor<16x32xf32, #nova.tensor_layout<bank0 = 0, space = 3>>, tensor<32x8xf32, #nova.tensor_layout<bank0 = 1, space = 3>>, tensor<16x8xf32, #nova.tensor_layout<bank0 = 0, space = 4>>, tensor<16x8xf32, #nova.tensor_layout<bank0 = 0, space = 5>> -> tensor<16x8xf32, #nova.tensor_layout<bank0 = 2, space = 3>>
+// CHECK: %[[LHS:.*]] = nova.load %arg0 [0, 0] : memref<16x32xf32> -> tensor<16x32xf32, #nova.layout<bank0 = 0, space = 3>>
+// CHECK: %[[RHS:.*]] = nova.load %arg1 [0, 0] : memref<32x8xf32> -> tensor<32x8xf32, #nova.layout<bank0 = 1, space = 3>>
+// CHECK: %[[SCALE:.*]] = nova.load %arg2 [0, 0] : memref<16x8xf32> -> tensor<16x8xf32, #nova.layout<bank0 = 0, space = 4>>
+// CHECK: %[[BIAS:.*]] = nova.load %arg3 [0, 0] : memref<16x8xf32> -> tensor<16x8xf32, #nova.layout<bank0 = 0, space = 5>>
+// CHECK: %[[RESULT:.*]] = nova.matmul %[[LHS]], %[[RHS]], %[[SCALE]], %[[BIAS]] : tensor<16x32xf32, #nova.layout<bank0 = 0, space = 3>>, tensor<32x8xf32, #nova.layout<bank0 = 1, space = 3>>, tensor<16x8xf32, #nova.layout<bank0 = 0, space = 4>>, tensor<16x8xf32, #nova.layout<bank0 = 0, space = 5>> -> tensor<16x8xf32, #nova.layout<bank0 = 2, space = 3>>
 // CHECK-NOT: nova.free(
 // CHECK-LABEL: func.func @allocate_split_banks
-// CHECK: %[[SPLIT:.*]] = nova.square %arg0 : tensor<64x128xf32, #nova.tensor_layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128]>> -> tensor<64x128xf32, #nova.tensor_layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128], bank0 = 0, bank1 = 1, space = 3>>
+// CHECK: %[[SPLIT:.*]] = nova.square %arg0 : tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128]>> -> tensor<64x128xf32, #nova.layout<range0 [0, 0] [32, 128], range1 [32, 0] [32, 128], bank0 = 0, bank1 = 1, space = 3>>
 // CHECK-NOT: nova.free(
