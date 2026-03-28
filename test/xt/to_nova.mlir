@@ -147,13 +147,13 @@ module {
 // CHECK: xt.store(%[[DYNLOAD]], %arg1, %arg2, %{{.*}}) : (tensor<16x16xf32>, memref<128x16xf32>, i32, i32) -> ()
 // CHECK-LABEL: func.func @load_conv2d_interior
 // CHECK: %[[LOADCONV0:.*]] = nova.load %arg0 [0, 31, 63, 0] : memref<1x96x192x128xi8> -> tensor<1x34x66x128xi8>
-// CHECK: %[[CONV0:.*]] = nova.conv2d %[[LOADCONV0]], %arg1 {dilation = array<i64: 1, 1>, group = 1 : i64, pad = array<i64: 0, 0, 0, 0>, stride = array<i64: 1, 1>} : tensor<1x34x66x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
+// CHECK: %[[CONV0:.*]] = nova.conv2d %[[LOADCONV0]], %arg1 group 1 pad [0, 0, 0, 0] stride [1, 1] dilation [1, 1] : tensor<1x34x66x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
 // CHECK-LABEL: func.func @load_conv2d_boundary
 // CHECK: %[[LOADCONV1:.*]] = nova.load %arg0 [0, 0, 0, 0] : memref<1x96x192x128xi8> -> tensor<1x33x65x128xi8>
-// CHECK: %[[CONV1:.*]] = nova.conv2d %[[LOADCONV1]], %arg1 {dilation = array<i64: 1, 1>, group = 1 : i64, pad = array<i64: 1, 1, 0, 0>, stride = array<i64: 1, 1>} : tensor<1x33x65x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
+// CHECK: %[[CONV1:.*]] = nova.conv2d %[[LOADCONV1]], %arg1 group 1 pad [1, 1, 0, 0] stride [1, 1] dilation [1, 1] : tensor<1x33x65x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
 // CHECK-LABEL: func.func @load_conv2d_bottom_right_boundary
 // CHECK: %[[LOADCONV2:.*]] = nova.load %arg0 [0, 63, 127, 0] : memref<1x96x192x128xi8> -> tensor<1x33x65x128xi8>
-// CHECK: %[[CONV2:.*]] = nova.conv2d %[[LOADCONV2]], %arg1 {dilation = array<i64: 1, 1>, group = 1 : i64, pad = array<i64: 0, 0, 1, 1>, stride = array<i64: 1, 1>} : tensor<1x33x65x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
+// CHECK: %[[CONV2:.*]] = nova.conv2d %[[LOADCONV2]], %arg1 group 1 pad [0, 0, 1, 1] stride [1, 1] dilation [1, 1] : tensor<1x33x65x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
 // CHECK-LABEL: func.func @cast_ops
 // CHECK: %[[ITOF:.*]] = nova.itof %arg0 : tensor<5x16xi8> -> tensor<5x16xf32>
 // CHECK: %[[FTOI:.*]] = nova.ftoi %arg1 : tensor<5x16xf32> -> tensor<5x16xi8>

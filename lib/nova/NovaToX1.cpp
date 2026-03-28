@@ -378,6 +378,37 @@ static LogicalResult createX1Matmul(OpBuilder &builder, nova::MatmulOp op,
   return success();
 }
 
+static LogicalResult createX1Conv2D(OpBuilder &builder, nova::Conv2DOp op,
+                                    const TensorLayout &inputLayout,
+                                    const TensorLayout &filterLayout,
+                                    const TensorLayout &resultLayout) {
+  auto inputType = dyn_cast<RankedTensorType>(op.getInput().getType());
+  auto filterType = dyn_cast<RankedTensorType>(op.getFilter().getType());
+  auto resultType = dyn_cast<RankedTensorType>(op.getResult().getType());
+  if (!inputType || !filterType || !resultType || !inputType.hasStaticShape() ||
+      !filterType.hasStaticShape() || !resultType.hasStaticShape() ||
+      inputType.getRank() != 4 || filterType.getRank() != 4 ||
+      resultType.getRank() != 4) {
+    op.emitOpError("requires statically shaped rank-4 conv2d operands/results");
+    return failure();
+  }
+  if (inputLayout.threadCount != 1 || filterLayout.threadCount != 1 ||
+      resultLayout.threadCount != 1) {
+    op.emitOpError("requires unthreaded conv2d layouts for x1 lowering");
+    return failure();
+  }
+
+  builder.create<x1::Conv2DOp>(
+      op.getLoc(), builder.getI64IntegerAttr(getFirstBank(inputLayout)),
+      builder.getI64IntegerAttr(getFirstBank(filterLayout)),
+      builder.getI64IntegerAttr(getFirstBank(resultLayout)),
+      getI64ArrayAttr(builder, inputType.getShape()),
+      getI64ArrayAttr(builder, filterType.getShape()),
+      getI64ArrayAttr(builder, resultType.getShape()), op.getGroupAttr(),
+      op.getPadAttr(), op.getStrideAttr(), op.getDilationAttr());
+  return success();
+}
+
 static void createX1ScalarFma(OpBuilder &builder, nova::ScalarFmaOp op,
                               const TensorLayout &inputLayout,
                               const TensorLayout &resultLayout) {
@@ -619,6 +650,28 @@ public:
           return;
         }
         layouts[matmul.getResult()] = *resultLayout;
+        eraseOps.push_back(operation);
+        continue;
+      }
+
+      if (auto conv2d = dyn_cast<nova::Conv2DOp>(operation)) {
+        auto inputIt = layouts.find(conv2d.getInput());
+        auto filterIt = layouts.find(conv2d.getFilter());
+        if (inputIt == layouts.end() || filterIt == layouts.end()) {
+          conv2d.emitOpError("requires lowered input metadata");
+          signalPassFailure();
+          return;
+        }
+
+        FailureOr<TensorLayout> resultLayout =
+            getTensorLayoutFromType(conv2d, conv2d.getResult().getType());
+        if (failed(resultLayout) ||
+            failed(createX1Conv2D(builder, conv2d, inputIt->second,
+                                  filterIt->second, *resultLayout))) {
+          signalPassFailure();
+          return;
+        }
+        layouts[conv2d.getResult()] = *resultLayout;
         eraseOps.push_back(operation);
         continue;
       }

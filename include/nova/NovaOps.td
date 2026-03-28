@@ -140,7 +140,7 @@ def Nova_Conv2DOp : Nova_Op<"conv2d", [Pure]> {
   let results = (outs Nova_RankedTensor:$result);
   let hasVerifier = 1;
   let assemblyFormat =
-      "$input `,` $filter attr-dict `:` type($input) `,` type($filter) `->` type($result)";
+      "$input `,` $filter `group` $group `pad` $pad `stride` $stride `dilation` $dilation attr-dict `:` type($input) `,` type($filter) `->` type($result)";
 }
 
 def Nova_ReduceOp : Nova_Op<"reduce", [Pure]> {

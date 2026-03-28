@@ -93,8 +93,9 @@ def main(argv=None):
     xt.save_ir(ir, f"{save_dir}/5_nova_barrier.mlir")
     ir = xt.nova_allocate(ir)
     xt.save_ir(ir, f"{save_dir}/6_nova_allocate.mlir")
+    ir = xt.nova_to_x1(ir)
+    xt.save_ir(ir, f"{save_dir}/7_nova_to_x1.mlir")
     print("compiled kernel ->", save_dir)
-    print("skipped 7_nova_to_x1.mlir because nova.conv2d lowering is not implemented")
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ func.func @parse_permute(%arg0: tensor<2x3x5xf32>) -> tensor<5x2x3xf32> {
 }
 
 func.func @parse_conv2d(%arg0: tensor<1x32x64x128xi8>, %arg1: tensor<3x3x128x64xi8>) -> tensor<1x32x64x64xf32> {
-  %0 = nova.conv2d %arg0, %arg1 {dilation = array<i64: 1, 1>, group = 1 : i64, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
+  %0 = nova.conv2d %arg0, %arg1 group 1 pad [1, 1, 1, 1] stride [1, 1] dilation [1, 1] : tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
   func.return %0 : tensor<1x32x64x64xf32>
 }
 
@@ -75,7 +75,7 @@ func.func @parse_int_result_matmul(%arg0: tensor<16x32xi8>, %arg1: tensor<32x8xi
 // CHECK: %[[PERMUTE:.*]] = nova.permute %arg0 [2, 0, 1] : tensor<2x3x5xf32> -> tensor<5x2x3xf32>
 // CHECK: return %[[PERMUTE]] : tensor<5x2x3xf32>
 // CHECK-LABEL: func.func @parse_conv2d
-// CHECK: %[[CONV:.*]] = nova.conv2d %arg0, %arg1 {dilation = array<i64: 1, 1>, group = 1 : i64, pad = array<i64: 1, 1, 1, 1>, stride = array<i64: 1, 1>} : tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
+// CHECK: %[[CONV:.*]] = nova.conv2d %arg0, %arg1 group 1 pad [1, 1, 1, 1] stride [1, 1] dilation [1, 1] : tensor<1x32x64x128xi8>, tensor<3x3x128x64xi8> -> tensor<1x32x64x64xf32>
 // CHECK: return %[[CONV]] : tensor<1x32x64x64xf32>
 // CHECK-LABEL: func.func @parse_int_result_matmul
 // CHECK: %[[MM:.*]] = nova.matmul %arg0, %arg1, %arg2, %arg3 : tensor<16x32xi8>, tensor<32x8xi8>, tensor<1x1xf32>, tensor<1x1xf32> -> tensor<16x8xi32>

@@ -50,6 +50,23 @@ def X1_MatmulOp : X1_Op<"matmul"> {
   let assemblyFormat = "`lhs` $lhs0 $lhs1 `rhs` $rhs0 $rhs1 `out` $out0 $out1 `mnk` $m $n $k attr-dict";
 }
 
+def X1_Conv2DOp : X1_Op<"conv2d"> {
+  let summary = "x1 conv2d command";
+  let arguments = (ins I64Attr:$inp,
+                       I64Attr:$filter,
+                       I64Attr:$out,
+                       DenseI64ArrayAttr:$inputShape,
+                       DenseI64ArrayAttr:$kernelShape,
+                       DenseI64ArrayAttr:$resultShape,
+                       I64Attr:$group,
+                       DenseI64ArrayAttr:$pad,
+                       DenseI64ArrayAttr:$stride,
+                       DenseI64ArrayAttr:$dilation);
+  let hasVerifier = 1;
+  let assemblyFormat =
+      "`inp` $inp `filter` $filter `out` $out `input` $inputShape `kernel` $kernelShape `result` $resultShape `group` $group `pad` $pad `stride` $stride `dilation` $dilation attr-dict";
+}
+
 class X1_UnaryBankCommandOp<string mnemonic, string summaryText> :
     X1_Op<mnemonic> {
   let summary = summaryText;

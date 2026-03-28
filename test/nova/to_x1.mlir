@@ -147,6 +147,15 @@ func.func @elementwise_add(%arg0: memref<128x128xf32>, %arg1: memref<128x128xf32
   return
 }
 
+func.func @conv2d(%arg0: memref<1x32x64x128xi8>, %arg1: memref<3x3x128x64xi8>,
+                  %arg2: memref<1x32x64x64xf32>) {
+  %0 = nova.load %arg0 [0, 0, 0, 0] : memref<1x32x64x128xi8> -> tensor<1x32x64x128xi8, #nova.layout<range0 [0, 0, 0, 0] [1, 32, 64, 128], bank0 = 0, space = 3>>
+  %1 = nova.load %arg1 [0, 0, 0, 0] : memref<3x3x128x64xi8> -> tensor<3x3x128x64xi8, #nova.layout<range0 [0, 0, 0, 0] [3, 3, 128, 64], bank0 = 1, space = 3>>
+  %2 = nova.conv2d %0, %1 group 1 pad [1, 1, 1, 1] stride [1, 1] dilation [1, 1] : tensor<1x32x64x128xi8, #nova.layout<range0 [0, 0, 0, 0] [1, 32, 64, 128], bank0 = 0, space = 3>>, tensor<3x3x128x64xi8, #nova.layout<range0 [0, 0, 0, 0] [3, 3, 128, 64], bank0 = 1, space = 3>> -> tensor<1x32x64x64xf32, #nova.layout<range0 [0, 0, 0, 0] [1, 32, 64, 64], bank0 = 2, space = 3>>
+  nova.store %2, %arg2 [0, 0, 0, 0] : (tensor<1x32x64x64xf32, #nova.layout<range0 [0, 0, 0, 0] [1, 32, 64, 64], bank0 = 2, space = 3>>, memref<1x32x64x64xf32>) -> ()
+  return
+}
+
 // CHECK-LABEL: func.func @rowwise_layernorm
 // CHECK-NEXT: x1.load %arg0 0 [0, 0] [32, 64] space 3 thread 0 : memref<128x64xf32>
 // CHECK-NEXT: x1.load %arg0 1 [32, 0] [32, 64] space 3 thread 1 : memref<128x64xf32>
@@ -216,4 +225,11 @@ func.func @elementwise_add(%arg0: memref<128x128xf32>, %arg1: memref<128x128xf32
 // CHECK-NEXT: x1.elementwise 1 lhs 0 1 rhs 2 3 out 4 5 [32, 128] lhs 1.000000e+00 0.000000e+00 rhs 1.000000e+00 0.000000e+00
 // CHECK-NEXT: x1.store %arg2 4 [0, 0] [32, 128] space 3 thread 0 : memref<128x128xf32>
 // CHECK-NEXT: x1.store %arg2 5 [32, 0] [32, 128] space 3 thread 1 : memref<128x128xf32>
+// CHECK-NEXT: return
+
+// CHECK-LABEL: func.func @conv2d
+// CHECK-NEXT: x1.load %arg0 0 [0, 0, 0, 0] [1, 32, 64, 128] space 3 thread 0 : memref<1x32x64x128xi8>
+// CHECK-NEXT: x1.load %arg1 1 [0, 0, 0, 0] [3, 3, 128, 64] space 3 thread 0 : memref<3x3x128x64xi8>
+// CHECK-NEXT: x1.conv2d inp 0 filter 1 out 2 input [1, 32, 64, 128] kernel [3, 3, 128, 64] result [1, 32, 64, 64] group 1 pad [1, 1, 1, 1] stride [1, 1] dilation [1, 1]
+// CHECK-NEXT: x1.store %arg2 2 [0, 0, 0, 0] [1, 32, 64, 64] space 3 thread 0 : memref<1x32x64x64xf32>
 // CHECK-NEXT: return
